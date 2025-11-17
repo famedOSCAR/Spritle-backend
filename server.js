@@ -7,7 +7,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*", // o la URL de tu página Netlify
+        origin: "spritlebot.netlify.app",
     }
 });
 
@@ -16,14 +16,18 @@ app.use(express.json());
 
 let botStats = { ping: 0, guilds: 0, members: 0, uptime: 0 };
 
+app.get("/api/stats", (req, res) => {
+    res.json(botStats);
+});
+
 // Endpoint para recibir datos del bot
 app.post("/update-stats", (req, res) => {
     botStats = req.body;
-    io.emit("bot-stats", botStats); // envía los datos a todos los clientes conectados
+    io.emit("bot-stats", botStats);
     res.sendStatus(200);
 });
 
-// Websocket para la página
+// Websocket
 io.on("connection", (socket) => {
     console.log("Usuario conectado a websockets");
     socket.emit("bot-stats", botStats);

@@ -38,6 +38,9 @@ app.post("/increment-command", (req, res) => {
     // Sumar uno al comando
     commandUsage[command] = (commandUsage[command] || 0) + 1;
 
+    // 🔹 Log para verificar que llega al backend
+    console.log("Top comandos actualizados:", commandUsage);
+
     // Emitir a todos los clientes conectados vía WebSocket
     io.emit("top-commands", commandUsage);
 

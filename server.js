@@ -6,9 +6,13 @@ import axios from "axios";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 dotenv.config();
+import { Client, GatewayIntentBits } from "discord.js";
 
 const DISCORD_API = "https://discord.com/api";
 const BOT_TOKEN = process.env.BOT_TOKEN;
+
+if (!BOT_TOKEN) throw new Error("No BOT_TOKEN in environment variables!");
+
 const app = express();
 const server = http.createServer(app);
 
@@ -28,8 +32,8 @@ app.use(cors());
 app.use(express.json());
 
 /* =======================================================
-===============   BOT STATS (SOCKET.IO)   ==============
-   ======================================================= */
+================   BOT STATS (SOCKET.IO)   ==============
+======================================================= */
 
 let botStats = { ping: 0, guilds: 0, members: 0, uptime: 0 };
 
@@ -49,8 +53,26 @@ io.on("connection", (socket) => {
 });
 
 /* =======================================================
-===============   MIDDLEWARE JWT   =====================
-   ======================================================= */
+================   DISCORD BOT CLIENT   =================
+======================================================= */
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+let botGuildsCache = [];
+
+client.on("ready", () => {
+    console.log(`🤖 Bot listo como ${client.user.tag}`);
+    botGuildsCache = client.guilds.cache.map(g => ({
+        id: g.id,
+        name: g.name,
+        icon: g.icon,
+    }));
+});
+
+client.login(BOT_TOKEN);
+
+/* =======================================================
+================   MIDDLEWARE JWT   =====================
+======================================================= */
 
 function verifyToken(req, res, next) {
     const header = req.headers.authorization;
@@ -68,12 +90,11 @@ function verifyToken(req, res, next) {
 }
 
 /* =======================================================
-===============   DISCORD LOGIN   ======================
-   ======================================================= */
+================   DISCORD LOGIN   ======================
+======================================================= */
 
 app.get("/auth/discord", (req, res) => {
     const redirect = encodeURIComponent(process.env.REDIRECT_URI);
-
     res.redirect(
         `https://discord.com/api/oauth2/authorize?` +
         `client_id=${process.env.CLIENT_ID}` +
@@ -84,8 +105,8 @@ app.get("/auth/discord", (req, res) => {
 });
 
 /* =======================================================
-===============   CALLBACK DISCORD   ===================
-   ======================================================= */
+================   CALLBACK DISCORD   ===================
+======================================================= */
 
 app.get("/auth/callback", async (req, res) => {
     const code = req.query.code;
@@ -106,7 +127,7 @@ app.get("/auth/callback", async (req, res) => {
 
         const access_token = tokenRes.data.access_token;
 
-        const userRes = await axios.get("https://discord.com/api/users/@me", {
+        const userRes = await axios.get(`${DISCORD_API}/users/@me`, {
             headers: { Authorization: `Bearer ${access_token}` }
         });
 
@@ -117,7 +138,7 @@ app.get("/auth/callback", async (req, res) => {
                 id: user.id,
                 username: user.username,
                 avatar: user.avatar,
-                discordAccessToken: access_token // Guardamos el token de Discord
+                discordAccessToken: access_token
             },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
@@ -131,8 +152,9 @@ app.get("/auth/callback", async (req, res) => {
 });
 
 /* =======================================================
-===============   API USUARIO + SERVERS   ==============
-   ======================================================= */
+================   API USUARIO + SERVERS   ==============
+======================================================= */
+
 app.get("/api/user", verifyToken, async (req, res) => {
     const discordToken = req.user.discordAccessToken;
     if (!discordToken) return res.status(403).json({ error: "No Discord token" });
@@ -141,33 +163,21 @@ app.get("/api/user", verifyToken, async (req, res) => {
         const user = await axios.get(`${DISCORD_API}/users/@me`, {
             headers: { Authorization: `Bearer ${discordToken}` }
         }).then(r => r.data);
+
         const userGuilds = await axios.get(`${DISCORD_API}/users/@me/guilds`, {
             headers: { Authorization: `Bearer ${discordToken}` }
         }).then(r => r.data);
 
-        const botGuilds = await axios.get(`${DISCORD_API}/users/@me/guilds`, {
-            headers: { Authorization: `Bot ${BOT_TOKEN}` }
-        }).then(r => r.data);
-
         const adminPermission = 0x20; // MANAGE_GUILD
 
-        const mutualGuilds = userGuilds.filter(userGuild => {
-            const botInGuild = botGuilds.some(botGuild => botGuild.id === userGuild.id);
-            const userHasAdmin = (userGuild.permissions & adminPermission) === adminPermission;
-
+        const mutualGuilds = userGuilds.filter(guild => {
+            const botInGuild = botGuildsCache.some(b => b.id === guild.id);
+            const userHasAdmin = (guild.permissions & adminPermission) === adminPermission;
             return botInGuild && userHasAdmin;
         });
 
-        res.json({
-            user,
-            servers: mutualGuilds
-        });
-
+        res.json({ user, servers: mutualGuilds });
     } catch (err) {
-        if (err.response?.status === 401 || err.response?.status === 403) {
-            return res.status(401).json({ error: "Discord token expired" });
-        }
-
         console.error("Error al obtener datos de Discord:", err.response?.data || err);
         res.status(500).json({ error: "Error al obtener datos de Discord" });
     }
@@ -178,50 +188,42 @@ app.get("/api/user-servers", verifyToken, async (req, res) => {
     if (!discordToken) return res.status(403).json({ error: "No Discord token" });
 
     try {
-        const servers = await axios.get("https://discord.com/api/users/@me/guilds", {
-            headers: { Authorization: `Bearer ${discordToken}` },
+        const userGuilds = await axios.get(`${DISCORD_API}/users/@me/guilds`, {
+            headers: { Authorization: `Bearer ${discordToken}` }
         }).then(r => r.data);
 
-        res.json({ servers });
+        const adminPermission = 0x20; // MANAGE_GUILD
+
+        const mutualGuilds = userGuilds.filter(guild => {
+            const botInGuild = botGuildsCache.some(b => b.id === guild.id);
+            const userHasAdmin = (guild.permissions & adminPermission) === adminPermission;
+            return botInGuild && userHasAdmin;
+        });
+
+        res.json({ servers: mutualGuilds });
     } catch (err) {
-        if (err.response?.status === 401 || err.response?.status === 403) {
-            return res.status(401).json({ error: "Discord token expired" });
-        }
         console.error("Error obteniendo servidores:", err.response?.data || err);
         res.status(500).json({ error: "Error al obtener servidores" });
     }
 });
 
-
-
 /* =======================================================
-===============   CONFIGURACIONES   ====================
-   ======================================================= */
+================   CONFIGURACIONES   ===================
+======================================================= */
 
 app.post("/api/:guildId/welcome", verifyToken, (req, res) => {
-    io.emit("update-welcome", {
-        guildId: req.params.guildId,
-        config: req.body
-    });
-
+    io.emit("update-welcome", { guildId: req.params.guildId, config: req.body });
     res.json({ success: true });
 });
 
 app.post("/api/:guildId/moderation", verifyToken, (req, res) => {
-    io.emit("update-moderation", {
-        guildId: req.params.guildId,
-        config: req.body
-    });
-
+    io.emit("update-moderation", { guildId: req.params.guildId, config: req.body });
     res.json({ success: true });
 });
 
 /* =======================================================
-===============   START SERVER   =======================
-   ======================================================= */
+================   START SERVER   ======================
+======================================================= */
 
 const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, () =>
-    console.log(`🚀 Backend listo en puerto ${PORT}`)
-);
+server.listen(PORT, () => console.log(`🚀 Backend listo en puerto ${PORT}`));

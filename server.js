@@ -14,7 +14,8 @@ const io = new Server(server, {
     cors: {
         origin: [
             "https://spritlebot.netlify.app",
-            "http://localhost:5173"
+            "http://localhost:5173",
+            "https://spritle-frontend-xyz.onrender.com"
         ],
         methods: ["GET", "POST"],
         credentials: true
@@ -136,15 +137,20 @@ app.get("/api/user", verifyToken, async (req, res) => {
 
     try {
         const user = await axios.get("https://discord.com/api/users/@me", {
-            headers: { Authorization: `Bearer ${discordToken}` }
+            headers: { Authorization: `Bearer ${discordToken}` },
         }).then(r => r.data);
 
         const servers = await axios.get("https://discord.com/api/users/@me/guilds", {
-            headers: { Authorization: `Bearer ${discordToken}` }
+            headers: { Authorization: `Bearer ${discordToken}` },
         }).then(r => r.data);
 
         res.json({ user, servers });
     } catch (err) {
+        // Si Discord devuelve 401/403, el token expiró
+        if (err.response?.status === 401 || err.response?.status === 403) {
+            return res.status(401).json({ error: "Discord token expired" });
+        }
+
         console.error("Error al obtener datos de Discord:", err.response?.data || err);
         res.status(500).json({ error: "Error al obtener datos de Discord" });
     }

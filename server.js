@@ -171,10 +171,12 @@ app.get("/api/user", verifyToken, async (req, res) => {
         const adminPermission = 0x20; // MANAGE_GUILD
 
         const mutualGuilds = userGuilds.filter(guild => {
-            const botInGuild = botGuildsCache.some(b => b.id === guild.id);
+            const botInGuild = client.guilds.cache.has(guild.id);
             const userHasAdmin = (guild.permissions & adminPermission) === adminPermission;
             return botInGuild && userHasAdmin;
         });
+        console.log("Bot ready:", client.isReady());
+        console.log("Guilds en cache:", client.guilds.cache.size);
 
         res.json({ user, servers: mutualGuilds });
     } catch (err) {
@@ -195,10 +197,12 @@ app.get("/api/user-servers", verifyToken, async (req, res) => {
         const adminPermission = 0x20; // MANAGE_GUILD
 
         const mutualGuilds = userGuilds.filter(guild => {
-            const botInGuild = botGuildsCache.some(b => b.id === guild.id);
-            const userHasAdmin = (guild.permissions & adminPermission) === adminPermission;
-            return botInGuild && userHasAdmin;
+            const userHasAdmin = (BigInt(guild.permissions) & BigInt(adminPermission)) === BigInt(adminPermission);
+            return userHasAdmin;
         });
+        console.log("Bot ready:", client.isReady());
+        console.log("Bot guilds cache:", client.guilds.cache.map(g => g.id));
+        console.log("User guilds:", userGuilds.map(g => g.id));
 
         res.json({ servers: mutualGuilds });
     } catch (err) {

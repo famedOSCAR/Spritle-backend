@@ -26,7 +26,7 @@ app.use(cors());
 app.use(express.json());
 
 /* =======================================================
-   ===============   BOT STATS (SOCKET.IO)   ==============
+===============   BOT STATS (SOCKET.IO)   ==============
    ======================================================= */
 
 let botStats = { ping: 0, guilds: 0, members: 0, uptime: 0 };
@@ -47,7 +47,7 @@ io.on("connection", (socket) => {
 });
 
 /* =======================================================
-   ===============   MIDDLEWARE JWT   =====================
+===============   MIDDLEWARE JWT   =====================
    ======================================================= */
 
 function verifyToken(req, res, next) {
@@ -66,7 +66,7 @@ function verifyToken(req, res, next) {
 }
 
 /* =======================================================
-   ===============   DISCORD LOGIN   ======================
+===============   DISCORD LOGIN   ======================
    ======================================================= */
 
 app.get("/auth/discord", (req, res) => {
@@ -82,7 +82,7 @@ app.get("/auth/discord", (req, res) => {
 });
 
 /* =======================================================
-   ===============   CALLBACK DISCORD   ===================
+===============   CALLBACK DISCORD   ===================
    ======================================================= */
 
 app.get("/auth/callback", async (req, res) => {
@@ -129,7 +129,7 @@ app.get("/auth/callback", async (req, res) => {
 });
 
 /* =======================================================
-   ===============   API USUARIO + SERVERS   ==============
+===============   API USUARIO + SERVERS   ==============
    ======================================================= */
 app.get("/api/user", verifyToken, async (req, res) => {
     const discordToken = req.user.discordAccessToken;
@@ -156,8 +156,25 @@ app.get("/api/user", verifyToken, async (req, res) => {
     }
 });
 
+// Obtener servidores donde el bot está presente
+app.get("/api/user-servers", verifyToken, async (req, res) => {
+    try {
+        const BOT_TOKEN = process.env.BOT_TOKEN;
+
+        const response = await axios.get("https://discord.com/api/users/@me/guilds", {
+            headers: { Authorization: `Bot ${BOT_TOKEN}` } // Token del bot
+        });
+
+        const servers = response.data;
+        res.json({ servers });
+    } catch (err) {
+        console.error("Error al obtener servidores con token de bot:", err.response?.data || err);
+        res.status(500).json({ error: "Error al obtener servidores del bot" });
+    }
+});
+
 /* =======================================================
-   ===============   CONFIGURACIONES   ====================
+===============   CONFIGURACIONES   ====================
    ======================================================= */
 
 app.post("/api/:guildId/welcome", verifyToken, (req, res) => {
@@ -179,7 +196,7 @@ app.post("/api/:guildId/moderation", verifyToken, (req, res) => {
 });
 
 /* =======================================================
-   ===============   START SERVER   =======================
+===============   START SERVER   =======================
    ======================================================= */
 
 const PORT = process.env.PORT || 3000;

@@ -86,14 +86,13 @@ app.get("/auth/discord", (req, res) => {
 
 app.get("/auth/callback", async (req, res) => {
     const code = req.query.code;
-
     try {
         const data = new URLSearchParams({
             client_id: process.env.CLIENT_ID,
             client_secret: process.env.CLIENT_SECRET,
             grant_type: "authorization_code",
             code,
-            redirect_uri: process.env.REDIRECT_URI,
+            redirect_uri: process.env.REDIRECT_URI
         });
 
         const tokenRes = await axios.post(
@@ -104,29 +103,26 @@ app.get("/auth/callback", async (req, res) => {
 
         const access_token = tokenRes.data.access_token;
 
-        // Obtener usuario
         const userRes = await axios.get("https://discord.com/api/users/@me", {
-            headers: { Authorization: `Bearer ${access_token}` },
+            headers: { Authorization: `Bearer ${access_token}` }
         });
 
         const user = userRes.data;
 
-        // 👉 Guardamos el access_token dentro del JWT
         const jwtToken = jwt.sign(
             {
                 id: user.id,
                 username: user.username,
                 avatar: user.avatar,
-                access_token: access_token
+                discordAccessToken: access_token // Guardamos el token de Discord
             },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
         );
 
         res.redirect(`https://spritlebot.netlify.app/login?token=${jwtToken}`);
-
     } catch (err) {
-        console.error("OAuth error:", err?.response?.data);
+        console.error("OAuth error:", err?.response?.data || err);
         res.status(500).send("Error en OAuth");
     }
 });
@@ -134,26 +130,23 @@ app.get("/auth/callback", async (req, res) => {
 /* =======================================================
    ===============   API USUARIO + SERVERS   ==============
    ======================================================= */
-
 app.get("/api/user", verifyToken, async (req, res) => {
+    const discordToken = req.user.discordAccessToken;
+    if (!discordToken) return res.status(403).json({ error: "No Discord token" });
+
     try {
-        const { access_token } = req.user;
+        const user = await axios.get("https://discord.com/api/users/@me", {
+            headers: { Authorization: `Bearer ${discordToken}` }
+        }).then(r => r.data);
 
-        const user = await axios.get(
-            "https://discord.com/api/users/@me",
-            { headers: { Authorization: `Bearer ${access_token}` } }
-        ).then(r => r.data);
-
-        const servers = await axios.get(
-            "https://discord.com/api/users/@me/guilds",
-            { headers: { Authorization: `Bearer ${access_token}` } }
-        ).then(r => r.data);
+        const servers = await axios.get("https://discord.com/api/users/@me/guilds", {
+            headers: { Authorization: `Bearer ${discordToken}` }
+        }).then(r => r.data);
 
         res.json({ user, servers });
-
     } catch (err) {
-        console.error("❌ Error en /api/user:", err?.response?.data);
-        res.status(500).json({ error: "Error al obtener usuario" });
+        console.error("Error al obtener datos de Discord:", err.response?.data || err);
+        res.status(500).json({ error: "Error al obtener datos de Discord" });
     }
 });
 

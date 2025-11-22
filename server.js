@@ -9,6 +9,7 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
     cors: {
         origin: [
@@ -23,9 +24,9 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
-// ============================================
-// =============== BOT STATS ==================
-// ============================================
+/* =======================================================
+   ===============   BOT STATS (SOCKET.IO)   ==============
+   ======================================================= */
 
 let botStats = { ping: 0, guilds: 0, members: 0, uptime: 0 };
 
@@ -40,13 +41,13 @@ app.post("/update-stats", (req, res) => {
 });
 
 io.on("connection", (socket) => {
-    console.log("🟢 Usuario conectado al WebSocket");
+    console.log("🟢 WebSocket conectado");
     socket.emit("bot-stats", botStats);
 });
 
-// ============================================
-// =========== MIDDLEWARE TOKEN ===============
-// ============================================
+/* =======================================================
+   ===============   MIDDLEWARE JWT   =====================
+   ======================================================= */
 
 function verifyToken(req, res, next) {
     const header = req.headers.authorization;
@@ -57,25 +58,32 @@ function verifyToken(req, res, next) {
     try {
         req.user = jwt.verify(token, process.env.JWT_SECRET);
         next();
-    } catch {
+    } catch (err) {
+        console.error("JWT error:", err);
         res.status(403).json({ error: "Invalid token" });
     }
 }
 
-// ============================================
-// ============ DISCORD AUTH ==================
-// ============================================
+/* =======================================================
+   ===============   DISCORD LOGIN   ======================
+   ======================================================= */
 
-// LOGIN
 app.get("/auth/discord", (req, res) => {
     const redirect = encodeURIComponent(process.env.REDIRECT_URI);
 
     res.redirect(
-        `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${redirect}&response_type=code&scope=identify%20guilds`
+        `https://discord.com/api/oauth2/authorize?` +
+        `client_id=${process.env.CLIENT_ID}` +
+        `&redirect_uri=${redirect}` +
+        `&response_type=code` +
+        `&scope=identify%20guilds`
     );
 });
 
-// CALLBACK
+/* =======================================================
+   ===============   CALLBACK DISCORD   ===================
+   ======================================================= */
+
 app.get("/auth/callback", async (req, res) => {
     const code = req.query.code;
 
@@ -96,17 +104,20 @@ app.get("/auth/callback", async (req, res) => {
 
         const access_token = tokenRes.data.access_token;
 
+        // Obtener usuario
         const userRes = await axios.get("https://discord.com/api/users/@me", {
             headers: { Authorization: `Bearer ${access_token}` },
         });
 
         const user = userRes.data;
 
+        // 👉 Guardamos el access_token dentro del JWT
         const jwtToken = jwt.sign(
             {
                 id: user.id,
                 username: user.username,
-                avatar: user.avatar
+                avatar: user.avatar,
+                access_token: access_token
             },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
@@ -115,35 +126,50 @@ app.get("/auth/callback", async (req, res) => {
         res.redirect(`https://spritlebot.netlify.app/login?token=${jwtToken}`);
 
     } catch (err) {
-        console.error(err);
+        console.error("OAuth error:", err?.response?.data);
         res.status(500).send("Error en OAuth");
     }
 });
 
-// ============================================
-// ============ DASHBOARD API =================
-// ============================================
+/* =======================================================
+   ===============   API USUARIO + SERVERS   ==============
+   ======================================================= */
 
-// Lista los servidores donde está el bot
-app.get("/api/guilds", verifyToken, async (req, res) => {
-    // 🔥 Luego aquí conectas tu bot real
-    res.json([
-        { id: "123", name: "Servidor de Prueba", icon: null },
-        { id: "456", name: "Otro servidor", icon: null }
-    ]);
+app.get("/api/user", verifyToken, async (req, res) => {
+    try {
+        const { access_token } = req.user;
+
+        const user = await axios.get(
+            "https://discord.com/api/users/@me",
+            { headers: { Authorization: `Bearer ${access_token}` } }
+        ).then(r => r.data);
+
+        const servers = await axios.get(
+            "https://discord.com/api/users/@me/guilds",
+            { headers: { Authorization: `Bearer ${access_token}` } }
+        ).then(r => r.data);
+
+        res.json({ user, servers });
+
+    } catch (err) {
+        console.error("❌ Error en /api/user:", err?.response?.data);
+        res.status(500).json({ error: "Error al obtener usuario" });
+    }
 });
 
-// Configuración de bienvenida
-app.post("/api/:guildId/welcome", verifyToken, (req, res) => {
-    const guildId = req.params.guildId;
-    const config = req.body;
+/* =======================================================
+   ===============   CONFIGURACIONES   ====================
+   ======================================================= */
 
-    io.emit("update-welcome", { guildId, config });
+app.post("/api/:guildId/welcome", verifyToken, (req, res) => {
+    io.emit("update-welcome", {
+        guildId: req.params.guildId,
+        config: req.body
+    });
 
     res.json({ success: true });
 });
 
-// Otros módulos...
 app.post("/api/:guildId/moderation", verifyToken, (req, res) => {
     io.emit("update-moderation", {
         guildId: req.params.guildId,
@@ -153,8 +179,12 @@ app.post("/api/:guildId/moderation", verifyToken, (req, res) => {
     res.json({ success: true });
 });
 
+/* =======================================================
+   ===============   START SERVER   =======================
+   ======================================================= */
+
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () =>
-    console.log(`🚀 Backend escuchando en puerto ${PORT}`)
+    console.log(`🚀 Backend listo en puerto ${PORT}`)
 );

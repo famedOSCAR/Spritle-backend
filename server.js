@@ -71,7 +71,7 @@ app.get("/auth/discord", (req, res) => {
     const redirect = encodeURIComponent(process.env.REDIRECT_URI);
 
     res.redirect(
-        `https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${redirect}&response_type=code&scope=identify%20guilds`
+        `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${redirect}&response_type=code&scope=identify%20guilds`
     );
 });
 

@@ -7,6 +7,8 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 dotenv.config();
 
+const DISCORD_API = "https://discord.com/api";
+const BOT_TOKEN = process.env.BOT_TOKEN;
 const app = express();
 const server = http.createServer(app);
 
@@ -136,17 +138,32 @@ app.get("/api/user", verifyToken, async (req, res) => {
     if (!discordToken) return res.status(403).json({ error: "No Discord token" });
 
     try {
-        const user = await axios.get("https://discord.com/api/users/@me", {
-            headers: { Authorization: `Bearer ${discordToken}` },
+        const user = await axios.get(`${DISCORD_API}/users/@me`, {
+            headers: { Authorization: `Bearer ${discordToken}` }
+        }).then(r => r.data);
+        const userGuilds = await axios.get(`${DISCORD_API}/users/@me/guilds`, {
+            headers: { Authorization: `Bearer ${discordToken}` }
         }).then(r => r.data);
 
-        const servers = await axios.get("https://discord.com/api/users/@me/guilds", {
-            headers: { Authorization: `Bearer ${discordToken}` },
+        const botGuilds = await axios.get(`${DISCORD_API}/users/@me/guilds`, {
+            headers: { Authorization: `Bot ${BOT_TOKEN}` }
         }).then(r => r.data);
 
-        res.json({ user, servers });
+        const adminPermission = 0x20; // MANAGE_GUILD
+
+        const mutualGuilds = userGuilds.filter(userGuild => {
+            const botInGuild = botGuilds.some(botGuild => botGuild.id === userGuild.id);
+            const userHasAdmin = (userGuild.permissions & adminPermission) === adminPermission;
+
+            return botInGuild && userHasAdmin;
+        });
+
+        res.json({
+            user,
+            servers: mutualGuilds
+        });
+
     } catch (err) {
-        // Si Discord devuelve 401/403, el token expiró
         if (err.response?.status === 401 || err.response?.status === 403) {
             return res.status(401).json({ error: "Discord token expired" });
         }
@@ -155,6 +172,26 @@ app.get("/api/user", verifyToken, async (req, res) => {
         res.status(500).json({ error: "Error al obtener datos de Discord" });
     }
 });
+
+app.get("/api/user-servers", verifyToken, async (req, res) => {
+    const discordToken = req.user.discordAccessToken;
+    if (!discordToken) return res.status(403).json({ error: "No Discord token" });
+
+    try {
+        const servers = await axios.get("https://discord.com/api/users/@me/guilds", {
+            headers: { Authorization: `Bearer ${discordToken}` },
+        }).then(r => r.data);
+
+        res.json({ servers });
+    } catch (err) {
+        if (err.response?.status === 401 || err.response?.status === 403) {
+            return res.status(401).json({ error: "Discord token expired" });
+        }
+        console.error("Error obteniendo servidores:", err.response?.data || err);
+        res.status(500).json({ error: "Error al obtener servidores" });
+    }
+});
+
 
 
 /* =======================================================

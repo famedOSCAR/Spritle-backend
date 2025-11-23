@@ -172,7 +172,7 @@ app.get("/api/user", verifyToken, async (req, res) => {
 
         const mutualGuilds = userGuilds.filter(guild => {
             const botInGuild = client.guilds.cache.has(guild.id);
-            const userHasAdmin = (guild.permissions & adminPermission) === adminPermission;
+            const userHasAdmin =(BigInt(guild.permissions) & BigInt(adminPermission)) === BigInt(adminPermission);
             return botInGuild && userHasAdmin;
         });
         console.log("Bot ready:", client.isReady());

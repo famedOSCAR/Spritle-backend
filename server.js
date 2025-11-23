@@ -21,14 +21,24 @@ const io = new Server(server, {
         origin: [
             "https://spritlebot.netlify.app",
             "http://localhost:5173",
-            "https://spritle-frontend-xyz.onrender.com"
+            "https://spritle-backend-1-z6rk.onrender.com"
         ],
         methods: ["GET", "POST"],
         credentials: true
     }
 });
 
-app.use(cors());
+app.use(cors({
+    origin: [
+        "https://spritlebot.netlify.app",
+        "http://localhost:5173",
+        "https://spritle-backend-1-z6rk.onrender.com"
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+}));
+app.options("*", cors());
 app.use(express.json());
 
 /* =======================================================

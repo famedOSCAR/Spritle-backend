@@ -87,55 +87,59 @@ const client = new Client({
 let botGuildsCache = [];
 
 client.on("ready", () => {
-    console.log(`Bot listo: ${client.user.tag}`);
-
-    // Cron diario dentro de ready
     cron.schedule("0 0 * * *", async () => {
         const today = new Date().toISOString().split("T")[0];
 
         await Promise.allSettled(client.guilds.cache.map(async guild => {
-            const exists = await GuildGrowth.findOne({ guildId: guild.id, date: today });
-            if (!exists) {
-                await GuildGrowth.create({ guildId: guild.id, date: today, memberCount: guild.memberCount });
+            try {
+                const now = new Date();
+                await GuildGrowth.findOneAndUpdate(
+                    { guildId: guild.id, date: today },
+                    { $push: { snapshots: { time: now, memberCount: guild.memberCount } } },
+                    { upsert: true }
+                );
+            } catch (err) {
+                console.error("Error cron snapshot:", err);
             }
         }));
 
-        console.log("Datos de crecimiento guardados");
+        console.log("Snapshots diarios guardados");
     });
 });
-client.on("guildMemberAdd", async member => {
-    const today = new Date().toISOString().split("T")[0];
-    const guildId = member.guild.id;
+client.on("guildMemberAdd", async (member) => {
+    try {
+        const now = new Date();
+        const today = now.toISOString().split("T")[0];
+        const guildId = member.guild.id;
+        const memberCount = member.guild.memberCount;
 
-    // Asegurarse de tener la lista completa de miembros
-
-    const memberCount = member.guild.memberCount;
-
-    const exists = await GuildGrowth.findOne({ guildId, date: today });
-    if (exists) {
-        exists.memberCount = memberCount;
-        await exists.save();
-    } else {
-        await GuildGrowth.create({ guildId, date: today, memberCount });
+        await GuildGrowth.findOneAndUpdate(
+            { guildId, date: today },
+            { $push: { snapshots: { time: now, memberCount } } },
+            { upsert: true, new: true }
+        );
+        console.log(`Snapshot añadido (+) ${guildId} ${memberCount}`);
+    } catch (err) {
+        console.error("Error guardando snapshot on add:", err);
     }
-
-    console.log(`Miembro añadido a ${member.guild.name}, total: ${memberCount}`);
 });
 
 client.on("guildMemberRemove", async (member) => {
-    const today = new Date().toISOString().split("T")[0];
-    const guildId = member.guild.id;
-    const memberCount = member.guild.memberCount; // conteo seguro
+    try {
+        const now = new Date();
+        const today = now.toISOString().split("T")[0];
+        const guildId = member.guild.id;
+        const memberCount = member.guild.memberCount;
 
-    const exists = await GuildGrowth.findOne({ guildId, date: today });
-    if (exists) {
-        exists.memberCount = memberCount;
-        await exists.save();
-    } else {
-        await GuildGrowth.create({ guildId, date: today, memberCount });
+        await GuildGrowth.findOneAndUpdate(
+            { guildId, date: today },
+            { $push: { snapshots: { time: now, memberCount } } },
+            { upsert: true, new: true }
+        );
+        console.log(`Snapshot añadido (-) ${guildId} ${memberCount}`);
+    } catch (err) {
+        console.error("Error guardando snapshot on remove:", err);
     }
-
-    console.log(`Miembro salió de ${member.guild.name}, total: ${memberCount}`);
 });
 
 
@@ -332,9 +336,10 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
             mentionable: role.mentionable
         }));
         // Miembros (solo info básica, para no saturar)
-        const members = guild.members.cache.map(member => ({
-            id: member.id,
-            bot: member.user.bot
+        const fetchedMembers = await guild.members.fetch({ force: false });
+        const members = fetchedMembers.map(m => ({
+            id: m.id,
+            bot: m.user.bot,
         }));
 
         res.json({
@@ -350,8 +355,30 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
 });
 app.get("/api/:guildId/growth", verifyToken, async (req, res) => {
     try {
-        const data = await GuildGrowth.find({ guildId: req.params.guildId }).sort({ date: 1 });
-        res.json(data);
+        const docs = await GuildGrowth.find({
+            guildId: req.params.guildId
+        })
+            .sort({ date: 1 })
+            .lean();
+
+        // Aplastar snapshots
+        const flattened = docs.flatMap(doc =>
+            doc.snapshots.map(s => ({
+                time: s.time,
+                memberCount: s.memberCount
+            }))
+        );
+
+        // Ordenar por fecha real
+        flattened.sort((a, b) => new Date(a.time) - new Date(b.time));
+
+        // Formato final limpio
+        const output = flattened.map(s => ({
+            date: new Date(s.time).toISOString(), // UNO SOLO
+            memberCount: s.memberCount
+        }));
+
+        res.json(output);
     } catch (err) {
         console.error("Error obteniendo growthData:", err);
         res.status(500).json({ error: "Error al obtener datos de crecimiento" });

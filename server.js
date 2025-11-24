@@ -274,6 +274,7 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
         const members = guild.members.cache.map(member => ({
             id: member.id,
             joinedAt: member.joinedAt,
+            bot: member.user.bot,
             status: member.presence?.status || "offline"
         }));
 

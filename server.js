@@ -9,7 +9,7 @@ dotenv.config();
 import { Client, GatewayIntentBits } from "discord.js";
 import mongoose from "mongoose";
 import cron from "node-cron";
-import GuildGrowth from "./models/GuildGrowth";
+import GuildGrowth from "./models/GuildGrowth.js";
 
 
 mongoose.connect(process.env.MONGO_URI, {

@@ -239,7 +239,7 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
             id: guild.id,
             name: guild.name,
             icon: guild.icon,
-            ownerId: guild.ownerId,
+            ownerId: guild.ownerId.toString(), // <-- convertir a string
             memberCount: guild.memberCount,
             verificationLevel: guild.verificationLevel,
             afkTimeout: guild.afkTimeout,
@@ -264,7 +264,7 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
             name: role.name,
             color: role.color,
             position: role.position,
-            permissions: role.permissions.bitfield,
+            permissions: role.permissions.bitfield.toString(), // <-- convertir a string
             hoist: role.hoist,
             managed: role.managed,
             mentionable: role.mentionable
@@ -273,9 +273,7 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
         await guild.members.fetch();
         const members = guild.members.cache.map(member => ({
             id: member.id,
-            joinedAt: member.joinedAt,
-            bot: member.user.bot,
-            status: member.presence?.status || "offline"
+            bot: member.user.bot
         }));
 
         res.json({

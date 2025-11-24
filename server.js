@@ -107,7 +107,6 @@ client.on("guildMemberAdd", async member => {
     const guildId = member.guild.id;
 
     // Asegurarse de tener la lista completa de miembros
-    await member.guild.members.fetch();
 
     const memberCount = member.guild.memberCount;
 
@@ -122,13 +121,10 @@ client.on("guildMemberAdd", async member => {
     console.log(`Miembro añadido a ${member.guild.name}, total: ${memberCount}`);
 });
 
-client.on("guildMemberRemove", async member => {
+client.on("guildMemberRemove", async (member) => {
     const today = new Date().toISOString().split("T")[0];
     const guildId = member.guild.id;
-
-    await member.guild.members.fetch();
-
-    const memberCount = member.guild.memberCount;
+    const memberCount = member.guild.memberCount; // conteo seguro
 
     const exists = await GuildGrowth.findOne({ guildId, date: today });
     if (exists) {
@@ -330,7 +326,6 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
             mentionable: role.mentionable
         }));
         // Miembros (solo info básica, para no saturar)
-        await guild.members.fetch();
         const members = guild.members.cache.map(member => ({
             id: member.id,
             bot: member.user.bot

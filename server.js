@@ -32,7 +32,7 @@ const io = new Server(server, {
         origin: [
             "https://spritlebot.netlify.app",
             "http://localhost:5173",
-            "https://spritle-backend-1-z6rk.onrender.com"
+            "https://spritle-backend-iqn3.onrender.com"
         ],
         methods: ["GET", "POST"],
         credentials: true
@@ -43,7 +43,7 @@ app.use(cors({
     origin: [
         "https://spritlebot.netlify.app",
         "http://localhost:5173",
-        "https://spritle-backend-1-z6rk.onrender.com"
+        "https://spritle-backend-iqn3.onrender.com"
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

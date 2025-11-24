@@ -102,6 +102,45 @@ client.on("ready", () => {
     console.log("Datos de crecimiento guardados");
 });
 });
+client.on("guildMemberAdd", async member => {
+    const today = new Date().toISOString().split("T")[0];
+    const guildId = member.guild.id;
+
+    // Asegurarse de tener la lista completa de miembros
+    await member.guild.members.fetch();
+
+    const memberCount = member.guild.memberCount;
+
+    const exists = await GuildGrowth.findOne({ guildId, date: today });
+    if (exists) {
+        exists.memberCount = memberCount;
+        await exists.save();
+    } else {
+        await GuildGrowth.create({ guildId, date: today, memberCount });
+    }
+
+    console.log(`Miembro añadido a ${member.guild.name}, total: ${memberCount}`);
+});
+
+client.on("guildMemberRemove", async member => {
+    const today = new Date().toISOString().split("T")[0];
+    const guildId = member.guild.id;
+
+    await member.guild.members.fetch();
+
+    const memberCount = member.guild.memberCount;
+
+    const exists = await GuildGrowth.findOne({ guildId, date: today });
+    if (exists) {
+        exists.memberCount = memberCount;
+        await exists.save();
+    } else {
+        await GuildGrowth.create({ guildId, date: today, memberCount });
+    }
+
+    console.log(`Miembro salió de ${member.guild.name}, total: ${memberCount}`);
+});
+
 
 client.login(BOT_TOKEN);
 

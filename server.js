@@ -6,15 +6,15 @@ import axios from "axios";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 dotenv.config();
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, ChannelType } from "discord.js";
 import mongoose from "mongoose";
 import cron from "node-cron";
 import GuildGrowth from "./models/GuildGrowth.js";
 
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB conectado"))
-  .catch(err => console.error("❌ Error conectando MongoDB:", err));
+    .then(() => console.log("✅ MongoDB conectado"))
+    .catch(err => console.error("❌ Error conectando MongoDB:", err));
 
 
 
@@ -80,7 +80,8 @@ io.on("connection", (socket) => {
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages
     ]
 });
 let botGuildsCache = [];
@@ -90,17 +91,17 @@ client.on("ready", () => {
 
     // Cron diario dentro de ready
     cron.schedule("0 0 * * *", async () => {
-    const today = new Date().toISOString().split("T")[0];
+        const today = new Date().toISOString().split("T")[0];
 
-    await Promise.allSettled(client.guilds.cache.map(async guild => {
-        const exists = await GuildGrowth.findOne({ guildId: guild.id, date: today });
-        if (!exists) {
-            await GuildGrowth.create({ guildId: guild.id, date: today, memberCount: guild.memberCount });
-        }
-    }));
+        await Promise.allSettled(client.guilds.cache.map(async guild => {
+            const exists = await GuildGrowth.findOne({ guildId: guild.id, date: today });
+            if (!exists) {
+                await GuildGrowth.create({ guildId: guild.id, date: today, memberCount: guild.memberCount });
+            }
+        }));
 
-    console.log("Datos de crecimiento guardados");
-});
+        console.log("Datos de crecimiento guardados");
+    });
 });
 client.on("guildMemberAdd", async member => {
     const today = new Date().toISOString().split("T")[0];
@@ -304,15 +305,17 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
         };
 
         // Canales
-        const channels = guild.channels.cache.map(ch => ({
-            id: ch.id,
-            name: ch.name,
-            type: ch.type,
-            parentId: ch.parentId,
-            topic: ch.topic,
-            nsfw: ch.nsfw,
-            position: ch.position
-        }));
+        const channels = guild.channels.cache
+            .filter(ch => ch.type === ChannelType.GuildText || ch.type === ChannelType.GuildAnnouncement)
+            .map(ch => ({
+                id: ch.id,
+                name: ch.name,
+                type: ch.type,
+                parentId: ch.parentId,
+                topic: ch.topic,
+                nsfw: ch.nsfw,
+                position: ch.position
+            }));
 
         // Roles
         const roles = guild.roles.cache.map(role => ({
@@ -343,13 +346,13 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
     }
 });
 app.get("/api/:guildId/growth", verifyToken, async (req, res) => {
-  try {
-    const data = await GuildGrowth.find({ guildId: req.params.guildId }).sort({ date: 1 });
-    res.json(data);
-  } catch (err) {
-    console.error("Error obteniendo growthData:", err);
-    res.status(500).json({ error: "Error al obtener datos de crecimiento" });
-  }
+    try {
+        const data = await GuildGrowth.find({ guildId: req.params.guildId }).sort({ date: 1 });
+        res.json(data);
+    } catch (err) {
+        console.error("Error obteniendo growthData:", err);
+        res.status(500).json({ error: "Error al obtener datos de crecimiento" });
+    }
 });
 
 

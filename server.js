@@ -12,12 +12,10 @@ import cron from "node-cron";
 import GuildGrowth from "./models/GuildGrowth.js";
 
 
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log("✅ MongoDB conectado"))
-.catch(err => console.error("❌ Error conectando MongoDB:", err));
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB conectado"))
+  .catch(err => console.error("❌ Error conectando MongoDB:", err));
+
 
 
 

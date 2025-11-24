@@ -305,7 +305,9 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
         };
 
         // Canales
-        const channels = guild.channels.cache
+        // Traer todos los canales del servidor directamente desde Discord
+        const channelsFetched = await guild.channels.fetch();
+        const channels = channelsFetched
             .filter(ch => ch.type === ChannelType.GuildText || ch.type === ChannelType.GuildAnnouncement)
             .map(ch => ({
                 id: ch.id,
@@ -316,6 +318,7 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
                 nsfw: ch.nsfw,
                 position: ch.position
             }));
+
 
         // Roles
         const roles = guild.roles.cache.map(role => ({

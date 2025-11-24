@@ -66,7 +66,12 @@ io.on("connection", (socket) => {
 ================   DISCORD BOT CLIENT   =================
 ======================================================= */
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers
+    ]
+});
 let botGuildsCache = [];
 
 client.on("ready", () => {
@@ -182,7 +187,7 @@ app.get("/api/user", verifyToken, async (req, res) => {
 
         const mutualGuilds = userGuilds.filter(guild => {
             const botInGuild = client.guilds.cache.has(guild.id);
-            const userHasAdmin =(BigInt(guild.permissions) & BigInt(adminPermission)) === BigInt(adminPermission);
+            const userHasAdmin = (BigInt(guild.permissions) & BigInt(adminPermission)) === BigInt(adminPermission);
             return botInGuild && userHasAdmin;
         });
         console.log("Bot ready:", client.isReady());
@@ -220,6 +225,70 @@ app.get("/api/user-servers", verifyToken, async (req, res) => {
         res.status(500).json({ error: "Error al obtener servidores" });
     }
 });
+// Obtener estadísticas completas de un servidor
+app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
+    const { guildId } = req.params;
+
+    try {
+        // Verificar que el bot esté en ese servidor
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) return res.status(404).json({ error: "Servidor no encontrado" });
+
+        // Información básica del servidor
+        const guildInfo = {
+            id: guild.id,
+            name: guild.name,
+            icon: guild.icon,
+            ownerId: guild.ownerId,
+            memberCount: guild.memberCount,
+            verificationLevel: guild.verificationLevel,
+            afkTimeout: guild.afkTimeout,
+            banner: guild.banner,
+            features: guild.features
+        };
+
+        // Canales
+        const channels = guild.channels.cache.map(ch => ({
+            id: ch.id,
+            name: ch.name,
+            type: ch.type,
+            parentId: ch.parentId,
+            topic: ch.topic,
+            nsfw: ch.nsfw,
+            position: ch.position
+        }));
+
+        // Roles
+        const roles = guild.roles.cache.map(role => ({
+            id: role.id,
+            name: role.name,
+            color: role.color,
+            position: role.position,
+            permissions: role.permissions.bitfield,
+            hoist: role.hoist,
+            managed: role.managed,
+            mentionable: role.mentionable
+        }));
+        // Miembros (solo info básica, para no saturar)
+        await guild.members.fetch();
+        const members = guild.members.cache.map(member => ({
+            id: member.id,
+            joinedAt: member.joinedAt,
+            status: member.presence?.status || "offline"
+        }));
+
+        res.json({
+            guild: guildInfo,
+            channels,
+            roles,
+            members,
+        });
+    } catch (err) {
+        console.error("Error obteniendo stats del servidor:", err);
+        res.status(500).json({ error: "Error al obtener estadísticas" });
+    }
+});
+
 
 /* =======================================================
 ================   CONFIGURACIONES   ===================

@@ -7,6 +7,19 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 dotenv.config();
 import { Client, GatewayIntentBits } from "discord.js";
+import mongoose from "mongoose";
+import cron from "node-cron";
+import GuildGrowth from "./models/GuildGrowth";
+
+
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log("✅ MongoDB conectado"))
+.catch(err => console.error("❌ Error conectando MongoDB:", err));
+
+
 
 const DISCORD_API = "https://discord.com/api";
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -75,15 +88,25 @@ const client = new Client({
 let botGuildsCache = [];
 
 client.on("ready", () => {
-    console.log(`🤖 Bot listo como ${client.user.tag}`);
-    botGuildsCache = client.guilds.cache.map(g => ({
-        id: g.id,
-        name: g.name,
-        icon: g.icon,
+    console.log(`Bot listo: ${client.user.tag}`);
+
+    // Cron diario dentro de ready
+    cron.schedule("0 0 * * *", async () => {
+    const today = new Date().toISOString().split("T")[0];
+
+    await Promise.allSettled(client.guilds.cache.map(async guild => {
+        const exists = await GuildGrowth.findOne({ guildId: guild.id, date: today });
+        if (!exists) {
+            await GuildGrowth.create({ guildId: guild.id, date: today, memberCount: guild.memberCount });
+        }
     }));
+
+    console.log("Datos de crecimiento guardados");
+});
 });
 
 client.login(BOT_TOKEN);
+
 
 /* =======================================================
 ================   MIDDLEWARE JWT   =====================
@@ -286,6 +309,15 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
         console.error("Error obteniendo stats del servidor:", err);
         res.status(500).json({ error: "Error al obtener estadísticas" });
     }
+});
+app.get("/api/:guildId/growth", verifyToken, async (req, res) => {
+  try {
+    const data = await GuildGrowth.find({ guildId: req.params.guildId }).sort({ date: 1 });
+    res.json(data);
+  } catch (err) {
+    console.error("Error obteniendo growthData:", err);
+    res.status(500).json({ error: "Error al obtener datos de crecimiento" });
+  }
 });
 
 

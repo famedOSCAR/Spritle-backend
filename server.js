@@ -10,14 +10,24 @@ import { Client, GatewayIntentBits, ChannelType } from "discord.js";
 import mongoose from "mongoose";
 import cron from "node-cron";
 import GuildGrowth from "./models/GuildGrowth.js";
+import multer from "multer";
+import path from "path";
+
 
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("✅ MongoDB conectado"))
     .catch(err => console.error("❌ Error conectando MongoDB:", err));
 
+const storage = multer.diskStorage({
+    destination: "uploads/",
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        cb(null, `${Date.now()}-${file.fieldname}${ext}`);
+    }
+});
 
-
+const upload = multer({ storage });
 
 const DISCORD_API = "https://discord.com/api";
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -51,6 +61,8 @@ app.use(cors({
 }));
 
 app.use(express.json());
+app.use("/uploads", express.static("uploads"));
+
 
 /* =======================================================
 ================   BOT STATS (SOCKET.IO)   ==============
@@ -103,41 +115,53 @@ client.on("ready", () => {
         console.log("Datos de crecimiento guardados");
     });
 });
-client.on("guildMemberAdd", async member => {
-    const today = new Date().toISOString().split("T")[0];
-    const guildId = member.guild.id;
 
-    // Asegurarse de tener la lista completa de miembros
+client.on("guildMemberAdd", async (member) => {
+    try {
+        const today = new Date().toISOString().split("T")[0];
+        const guildId = member.guild.id;
+        const memberCount = member.guild.memberCount;
 
-    const memberCount = member.guild.memberCount;
+        // Guardar crecimiento
+        const exists = await GuildGrowth.findOne({ guildId, date: today });
+        if (exists) {
+            exists.memberCount = memberCount;
+            await exists.save();
+        } else {
+            await GuildGrowth.create({ guildId, date: today, memberCount });
+        }
 
-    const exists = await GuildGrowth.findOne({ guildId, date: today });
-    if (exists) {
-        exists.memberCount = memberCount;
-        await exists.save();
-    } else {
-        await GuildGrowth.create({ guildId, date: today, memberCount });
+        console.log(`Miembro añadido a ${member.guild.name}, total: ${memberCount}`);
+
+        // =====================================================
+        //               BIENVENIDA PERSONALIZADA
+        // =====================================================
+        const config = await WelcomeConfig.findOne({ guildId });
+        if (!config) return;
+
+        const channel = member.guild.channels.cache.get(config.channel);
+        if (!channel) return console.log("❌ Canal no encontrado para bienvenida");
+
+        let finalMessage = config.message
+            .replace("{user}", `<@${member.id}>`)
+            .replace("{username}", member.user.username)
+            .replace("{server}", member.guild.name);
+
+        if (config.image) {
+            await channel.send({
+                content: finalMessage,
+                files: [`.${config.image}`]
+            });
+        } else {
+            await channel.send(finalMessage);
+        }
+
+        console.log(`🎉 Bienvenida enviada a ${member.user.username}`);
+
+    } catch (err) {
+        console.error("❌ Error en guildMemberAdd:", err);
     }
-
-    console.log(`Miembro añadido a ${member.guild.name}, total: ${memberCount}`);
 });
-
-client.on("guildMemberRemove", async (member) => {
-    const today = new Date().toISOString().split("T")[0];
-    const guildId = member.guild.id;
-    const memberCount = member.guild.memberCount; // conteo seguro
-
-    const exists = await GuildGrowth.findOne({ guildId, date: today });
-    if (exists) {
-        exists.memberCount = memberCount;
-        await exists.save();
-    } else {
-        await GuildGrowth.create({ guildId, date: today, memberCount });
-    }
-
-    console.log(`Miembro salió de ${member.guild.name}, total: ${memberCount}`);
-});
-
 
 client.login(BOT_TOKEN);
 
@@ -363,9 +387,47 @@ app.get("/api/:guildId/growth", verifyToken, async (req, res) => {
 ================   CONFIGURACIONES   ===================
 ======================================================= */
 
-app.post("/api/:guildId/welcome", verifyToken, (req, res) => {
-    io.emit("update-welcome", { guildId: req.params.guildId, config: req.body });
-    res.json({ success: true });
+
+import WelcomeConfig from "./models/WelcomeConfig.js";
+
+app.post("/api/:guildId/welcome", verifyToken, upload.single("image"), async (req, res) => {
+    try {
+        const { guildId } = req.params;
+
+        const {
+            channel,
+            message,
+            textColor,
+            bgColor,
+            fontSize,
+            textPos
+        } = req.body;
+
+        const image = req.file ? `/uploads/${req.file.filename}` : null;
+
+        const update = {
+            channel,
+            message,
+            textColor,
+            bgColor,
+            fontSize,
+            textPos
+        };
+
+        if (image) update.image = image;
+
+        const config = await WelcomeConfig.findOneAndUpdate(
+            { guildId },
+            update,
+            { new: true, upsert: true }
+        );
+
+        res.json({ ok: true, saved: config });
+
+    } catch (err) {
+        console.error("❌ Error guardando welcome config:", err);
+        res.status(500).json({ error: "Error guardando configuración" });
+    }
 });
 
 app.post("/api/:guildId/moderation", verifyToken, (req, res) => {

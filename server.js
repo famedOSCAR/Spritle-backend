@@ -12,6 +12,9 @@ import cron from "node-cron";
 import GuildGrowth from "./models/GuildGrowth.js";
 import multer from "multer";
 import path from "path";
+import WelcomeConfig from "./models/WelcomeConfig.js";
+import { createCanvas, loadImage } from "canvas";
+import fs from "fs";
 
 
 
@@ -62,6 +65,108 @@ app.use(cors({
 
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
+/* =======================================================
+================   MIDDLEWARE JWT   =====================
+======================================================= */
+
+function verifyToken(req, res, next) {
+    const header = req.headers.authorization;
+    if (!header) return res.status(401).json({ error: "No token provided" });
+
+    const token = header.split(" ")[1];
+
+    try {
+        req.user = jwt.verify(token, process.env.JWT_SECRET);
+        next();
+    } catch (err) {
+        console.error("JWT error:", err);
+        res.status(403).json({ error: "Invalid token" });
+    }
+}
+//welcomes generador
+function isColor(str) {
+    return /^#([0-9A-F]{3}){1,2}$/i.test(str) ||
+        /^rgb/i.test(str) ||
+        /^[a-zA-Z]+$/.test(str);
+}
+
+async function generateWelcomeImage({ bgColor, image, textColor, fontSize, textPos, message }) {
+    const width = 1200;
+    const height = 500;
+
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext("2d");
+
+    if (bgColor && isColor(bgColor)) {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    if (image) {
+        try {
+            const img = await loadImage("." + image);
+            ctx.drawImage(img, 0, 0, width, height);
+        } catch (err) {
+            console.error("Error cargando imagen:", err);
+        }
+    }
+
+    ctx.fillStyle = textColor || "#ffffff";
+    ctx.font = `bold ${fontSize || 60}px Sans`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle"; // 👈 AGREGA ESTO
+
+    let y = height / 2;
+    if (textPos === "top") y = 120;
+    if (textPos === "bottom") y = height - 120;
+
+    ctx.fillText(message, width / 2, y);
+
+    const finalName = `/uploads/welcome_${Date.now()}.png`;
+    fs.writeFileSync("." + finalName, canvas.toBuffer("image/png"));
+
+    return finalName;
+}
+
+app.post("/api/:guildId/welcome", verifyToken, upload.single("image"), async (req, res) => {
+    try {
+        const { guildId } = req.params;
+
+        const {
+            channel,
+            message,
+            textColor,
+            bgColor,
+            fontSize,
+            textPos
+        } = req.body;
+
+        const image = req.file ? `/uploads/${req.file.filename}` : null;
+
+        const update = {
+            channel,
+            message,
+            textColor,
+            bgColor,
+            fontSize,
+            textPos
+        };
+
+        if (image) update.image = image;
+
+        const config = await WelcomeConfig.findOneAndUpdate(
+            { guildId },
+            update,
+            { new: true, upsert: true }
+        );
+
+        res.json({ ok: true, saved: config });
+
+    } catch (err) {
+        console.error("❌ Error guardando welcome config:", err);
+        res.status(500).json({ error: "Error guardando configuración" });
+    }
+});
 
 
 /* =======================================================
@@ -147,14 +252,18 @@ client.on("guildMemberAdd", async (member) => {
             .replace("{username}", member.user.username)
             .replace("{server}", member.guild.name);
 
-        if (config.image) {
-            await channel.send({
-                content: finalMessage,
-                files: [`.${config.image}`]
-            });
-        } else {
-            await channel.send(finalMessage);
-        }
+        const finalImage = await generateWelcomeImage({
+            bgColor: config.bgColor,
+            image: config.image,
+            textColor: config.textColor,
+            fontSize: config.fontSize,
+            textPos: config.textPos,
+            message: finalMessage
+        });
+
+        await channel.send({
+            files: ["." + finalImage]
+        });
 
         console.log(`🎉 Bienvenida enviada a ${member.user.username}`);
 
@@ -165,25 +274,6 @@ client.on("guildMemberAdd", async (member) => {
 
 client.login(BOT_TOKEN);
 
-
-/* =======================================================
-================   MIDDLEWARE JWT   =====================
-======================================================= */
-
-function verifyToken(req, res, next) {
-    const header = req.headers.authorization;
-    if (!header) return res.status(401).json({ error: "No token provided" });
-
-    const token = header.split(" ")[1];
-
-    try {
-        req.user = jwt.verify(token, process.env.JWT_SECRET);
-        next();
-    } catch (err) {
-        console.error("JWT error:", err);
-        res.status(403).json({ error: "Invalid token" });
-    }
-}
 
 /* =======================================================
 ================   DISCORD LOGIN   ======================
@@ -386,49 +476,6 @@ app.get("/api/:guildId/growth", verifyToken, async (req, res) => {
 /* =======================================================
 ================   CONFIGURACIONES   ===================
 ======================================================= */
-
-
-import WelcomeConfig from "./models/WelcomeConfig.js";
-
-app.post("/api/:guildId/welcome", verifyToken, upload.single("image"), async (req, res) => {
-    try {
-        const { guildId } = req.params;
-
-        const {
-            channel,
-            message,
-            textColor,
-            bgColor,
-            fontSize,
-            textPos
-        } = req.body;
-
-        const image = req.file ? `/uploads/${req.file.filename}` : null;
-
-        const update = {
-            channel,
-            message,
-            textColor,
-            bgColor,
-            fontSize,
-            textPos
-        };
-
-        if (image) update.image = image;
-
-        const config = await WelcomeConfig.findOneAndUpdate(
-            { guildId },
-            update,
-            { new: true, upsert: true }
-        );
-
-        res.json({ ok: true, saved: config });
-
-    } catch (err) {
-        console.error("❌ Error guardando welcome config:", err);
-        res.status(500).json({ error: "Error guardando configuración" });
-    }
-});
 
 app.post("/api/:guildId/moderation", verifyToken, (req, res) => {
     io.emit("update-moderation", { guildId: req.params.guildId, config: req.body });

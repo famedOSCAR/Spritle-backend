@@ -216,7 +216,7 @@ app.get("/auth/callback", async (req, res) => {
             { expiresIn: "7d" }
         );
 
-        res.redirect(`http://localhost:5173/login?token=${jwtToken}`);
+        res.redirect(`spritlebot.netlify.app/login?token=${jwtToken}`);
     } catch (err) {
         console.error("OAuth error:", err?.response?.data || err);
         res.status(500).send("Error en OAuth");

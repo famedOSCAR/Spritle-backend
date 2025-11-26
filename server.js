@@ -13,7 +13,7 @@ import GuildGrowth from "./models/GuildGrowth.js";
 import multer from "multer";
 import path from "path";
 import WelcomeConfig from "./models/WelcomeConfig.js";
-import { createCanvas, loadImage } from "canvas";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import fs from "fs";
 
 

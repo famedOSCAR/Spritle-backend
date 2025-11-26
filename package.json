@@ -2,8 +2,8 @@
   "type": "module",
   "main": "server.js",
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.82",
     "axios": "^1.6.0",
-    "canvas": "^3.2.0",
     "cors": "^2.8.5",
     "discord.js": "^14.25.1",
     "dotenv": "^16.3.1",

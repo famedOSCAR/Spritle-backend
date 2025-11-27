@@ -89,19 +89,54 @@ function isColor(str) {
         /^rgb/i.test(str) ||
         /^[a-zA-Z]+$/.test(str);
 }
+// ======================
+// PARSE VARIABLES
+// ======================
+function parsePlaceholders(str, user, guild) {
+    return str
+        .replace(/{user}/g, user.globalName || user.username) // nombre correcto
+        .replace(/{server}/g, guild.name)
+        .replace(/{member}/g, "@" + (user.globalName || user.username))// tag recreado
+        .replace(/{mention}/g, `<@${user.id}>`);
+}
 
-async function generateWelcomeImage({ bgColor, image, textColor, fontSize, textPos, message }) {
+// ======================
+// MULTILÍNEA / AUTO AJUSTE
+// ======================
+function wrapText(ctx, text, maxWidth) {
+    const words = text.split(" ");
+    let lines = [];
+    let line = "";
+
+    for (let i = 0; i < words.length; i++) {
+        const testLine = line + words[i] + " ";
+        const width = ctx.measureText(testLine).width;
+
+        if (width > maxWidth) {
+            lines.push(line.trim());
+            line = words[i] + " ";
+        } else {
+            line = testLine;
+        }
+    }
+    lines.push(line.trim());
+    return lines;
+}
+
+async function generateWelcomeImage({ bgColor, image, textColor, fontSize, message }) {
     const width = 1200;
     const height = 500;
 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext("2d");
 
+    // Fondo sólido
     if (bgColor && isColor(bgColor)) {
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, width, height);
     }
 
+    // Imagen de fondo
     if (image) {
         try {
             const img = await loadImage("." + image);
@@ -111,20 +146,24 @@ async function generateWelcomeImage({ bgColor, image, textColor, fontSize, textP
         }
     }
 
+    // TEXTO
     ctx.fillStyle = textColor || "#ffffff";
-    ctx.font = `bold ${fontSize || 60}px Sans`;
+    ctx.font = `${fontSize || 60}px Sans`;
     ctx.textAlign = "center";
-    ctx.textBaseline = "middle"; // 👈 AGREGA ESTO
+    ctx.textBaseline = "middle";
 
-    let y = height / 2;
-    if (textPos === "top") y = 120;
-    if (textPos === "bottom") y = height - 120;
+    // multi-línea auto-ajustada
+    const lines = wrapText(ctx, message, width - 200);
 
-    ctx.fillText(message, width / 2, y);
+    const lineHeight = fontSize ? fontSize + 10 : 70;
+    const top = height / 2 - (lines.length * lineHeight) / 2;
+
+    lines.forEach((line, i) => {
+        ctx.fillText(line, width / 2, top + i * lineHeight);
+    });
 
     const finalName = `/uploads/welcome_${Date.now()}.png`;
     fs.writeFileSync("." + finalName, canvas.toBuffer("image/png"));
-
     return finalName;
 }
 
@@ -247,10 +286,7 @@ client.on("guildMemberAdd", async (member) => {
         const channel = member.guild.channels.cache.get(config.channel);
         if (!channel) return console.log("❌ Canal no encontrado para bienvenida");
 
-        let finalMessage = config.message
-            .replace("{user}", `<@${member.id}>`)
-            .replace("{username}", member.user.username)
-            .replace("{server}", member.guild.name);
+        const finalMessage = parsePlaceholders(config.message, member.user, member.guild);
 
         const finalImage = await generateWelcomeImage({
             bgColor: config.bgColor,

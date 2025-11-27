@@ -15,6 +15,7 @@ import path from "path";
 import WelcomeConfig from "./models/WelcomeConfig.js";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import fs from "fs";
+import twemoji from "twemoji";
 
 
 
@@ -100,6 +101,30 @@ function parsePlaceholders(str, user, guild) {
         .replace(/{mention}/g, `<@${user.id}>`);
 }
 
+// Convierte emojis a imágenes usando Twemoji
+async function drawTextWithEmojis(ctx, text, x, y, fontSize) {
+    const parsed = twemoji.parse(text, {
+        folder: "72x72",
+        ext: ".png"
+    });
+
+    const parts = parsed.split(/(<img[^>]+>)/g);
+    let offsetX = 0;
+
+    for (const p of parts) {
+        if (p.startsWith("<img")) {
+            const src = p.match(/src="([^"]+)"/)[1];
+            const emoji = await loadImage(src);
+            const size = fontSize * 1.15;
+            ctx.drawImage(emoji, x + offsetX, y - size * 0.75, size, size);
+            offsetX += size * 0.9;
+        } else {
+            ctx.fillText(p, x + offsetX, y);
+            offsetX += ctx.measureText(p).width;
+        }
+    }
+}
+
 // ======================
 // MULTILÍNEA / AUTO AJUSTE
 // ======================
@@ -124,8 +149,8 @@ function wrapText(ctx, text, maxWidth) {
 }
 
 async function generateWelcomeImage({ bgColor, image, textColor, fontSize, message }) {
-    const width = 1200;
-    const height = 500;
+    const width = 900;
+    const height = 360;
 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext("2d");
@@ -147,20 +172,28 @@ async function generateWelcomeImage({ bgColor, image, textColor, fontSize, messa
     }
 
     // TEXTO
+    let realFontSize = Number(fontSize);
+    if (isNaN(realFontSize) || realFontSize < 80) realFontSize = 80;
+
     ctx.fillStyle = textColor || "#ffffff";
-    ctx.font = `${fontSize || 60}px Sans`;
+    ctx.font = `${realFontSize}px Sans`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    // multi-línea auto-ajustada
     const lines = wrapText(ctx, message, width - 200);
 
-    const lineHeight = fontSize ? fontSize + 10 : 70;
+    const lineHeight = realFontSize + 10;
     const top = height / 2 - (lines.length * lineHeight) / 2;
 
-    lines.forEach((line, i) => {
-        ctx.fillText(line, width / 2, top + i * lineHeight);
-    });
+    for (let i = 0; i < lines.length; i++) {
+        await drawTextWithEmojis(
+            ctx,
+            lines[i],
+            width / 2,
+            top + i * lineHeight,
+            realFontSize
+        );
+    }
 
     const finalName = `/uploads/welcome_${Date.now()}.png`;
     fs.writeFileSync("." + finalName, canvas.toBuffer("image/png"));

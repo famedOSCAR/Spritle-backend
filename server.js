@@ -149,8 +149,8 @@ function wrapText(ctx, text, maxWidth) {
 }
 
 async function generateWelcomeImage({ bgColor, image, textColor, fontSize, message }) {
-    const width = 900;
-    const height = 360;
+    const width = 1200;
+    const height = 500;
 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext("2d");
@@ -173,7 +173,7 @@ async function generateWelcomeImage({ bgColor, image, textColor, fontSize, messa
 
     // TEXTO
     let realFontSize = Number(fontSize);
-    if (isNaN(realFontSize) || realFontSize < 80) realFontSize = 80;
+    if (isNaN(realFontSize) || realFontSize < 70) realFontSize = 70;
 
     ctx.fillStyle = textColor || "#ffffff";
     ctx.font = `${realFontSize}px Sans`;

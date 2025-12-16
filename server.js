@@ -17,7 +17,8 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import fs from "fs";
 import twemoji from "twemoji";
 import AutoMod from "./models/automod.js";
-
+import Report from "./models/Report.js";
+import ReportsConfig from "./models/ReportsConfig.js";
 
 
 mongoose.connect(process.env.MONGO_URI)
@@ -644,6 +645,136 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
     } catch (err) {
         console.error("❌ Error guardando moderación:", err);
         res.status(500).json({ error: "Error guardando configuración" });
+    }
+});
+
+/* =======================================================
+================   REPORTS CONFIG   =====================
+======================================================= */
+
+/* =======================================================
+================   REPORTS CONFIG   =====================
+======================================================= */
+
+// Obtener configuración de reports
+app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
+    try {
+        const config = await ReportsConfig.findOne({ guildId: req.params.guildId });
+        res.json(config || {});
+    } catch (err) {
+        console.error("❌ Error obteniendo reports config:", err);
+        res.status(500).json({ error: "Error obteniendo configuración" });
+    }
+});
+
+// Guardar configuración de reports
+app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
+    try {
+        const { guildId } = req.params;
+        
+        const config = await ReportsConfig.findOneAndUpdate(
+            { guildId },
+            { ...req.body, guildId },
+            { new: true, upsert: true }
+        );
+        
+        console.log(`✅ Configuración de reports guardada para ${guildId}`);
+        
+        // Notificar en Discord
+        const guild = client.guilds.cache.get(guildId);
+        if (guild && config.enabled && config.channelId) {
+            const channel = guild.channels.cache.get(config.channelId);
+            if (channel) {
+                await channel.send({
+                    embeds: [{
+                        color: 0xFFA500,
+                        title: "📝 Sistema de Reports Activado",
+                        description: "El sistema de reportes ha sido configurado desde el dashboard.",
+                        fields: [
+                            { name: "Canal", value: `<#${config.channelId}>`, inline: true },
+                            { name: "Requiere razón", value: config.requireReason ? "✅ Sí" : "❌ No", inline: true },
+                            { name: "Reportes anónimos", value: config.anonymousReports ? "✅ Sí" : "❌ No", inline: true },
+                        ],
+                        timestamp: new Date()
+                    }]
+                });
+            }
+        }
+        
+        res.json({ ok: true, saved: config });
+    } catch (err) {
+        console.error("❌ Error guardando reports config:", err);
+        res.status(500).json({ error: "Error guardando configuración" });
+    }
+});
+
+/* =======================================================
+================   REPORTS DATA   =======================
+======================================================= */
+
+// 👇 AGREGAR ESTOS 3 ENDPOINTS
+
+// Obtener lista de reportes
+app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
+    try {
+        const { status, limit = 50 } = req.query;
+        const query = { guildId: req.params.guildId };
+        
+        if (status && status !== 'all') {
+            query.status = status;
+        }
+        
+        const reports = await Report.find(query)
+            .sort({ timestamp: -1 })
+            .limit(parseInt(limit));
+        
+        res.json(reports);
+    } catch (err) {
+        console.error("❌ Error obteniendo reportes:", err);
+        res.status(500).json({ error: "Error obteniendo reportes" });
+    }
+});
+
+// Obtener estadísticas
+app.get("/api/:guildId/reports/stats", verifyToken, async (req, res) => {
+    try {
+        const guildId = req.params.guildId;
+        
+        const [total, pending, resolved, dismissed] = await Promise.all([
+            Report.countDocuments({ guildId }),
+            Report.countDocuments({ guildId, status: 'pending' }),
+            Report.countDocuments({ guildId, status: 'resolved' }),
+            Report.countDocuments({ guildId, status: 'dismissed' })
+        ]);
+        
+        res.json({ total, pending, resolved, dismissed, topReported: [] });
+    } catch (err) {
+        console.error("❌ Error obteniendo stats:", err);
+        res.status(500).json({ error: "Error obteniendo estadísticas" });
+    }
+});
+
+// Actualizar estado
+app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const { status, resolution } = req.body;
+        
+        const report = await Report.findOneAndUpdate(
+            { reportId },
+            {
+                status,
+                resolution,
+                reviewedBy: req.user.id,
+                reviewedAt: new Date()
+            },
+            { new: true }
+        );
+        
+        res.json({ ok: true, report });
+    } catch (err) {
+        console.error("❌ Error actualizando reporte:", err);
+        res.status(500).json({ error: "Error actualizando reporte" });
     }
 });
 /* =======================================================

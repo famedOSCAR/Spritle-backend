@@ -207,6 +207,7 @@ app.post("/api/:guildId/welcome", verifyToken, upload.single("image"), async (re
         const { guildId } = req.params;
 
         const {
+            enabled,
             channel,
             message,
             textColor,
@@ -218,6 +219,7 @@ app.post("/api/:guildId/welcome", verifyToken, upload.single("image"), async (re
         const image = req.file ? `/uploads/${req.file.filename}` : null;
 
         const update = {
+            enabled: enabled === 'true' || enabled === true,
             channel,
             message,
             textColor,
@@ -295,13 +297,13 @@ client.on("ready", () => {
     });
 });
 
-client.on("guildMemberAdd", async (member) => {
+    client.on("guildMemberAdd", async (member) => {
     try {
         const today = new Date().toISOString().split("T")[0];
         const guildId = member.guild.id;
         const memberCount = member.guild.memberCount;
 
-        // Guardar crecimiento
+        // Guardar crecimiento...
         const exists = await GuildGrowth.findOne({ guildId, date: today });
         if (exists) {
             exists.memberCount = memberCount;
@@ -312,11 +314,14 @@ client.on("guildMemberAdd", async (member) => {
 
         console.log(`Miembro añadido a ${member.guild.name}, total: ${memberCount}`);
 
-        // =====================================================
-        //               BIENVENIDA PERSONALIZADA
-        // =====================================================
+        // BIENVENIDA PERSONALIZADA
         const config = await WelcomeConfig.findOne({ guildId });
-        if (!config) return;
+        
+        // ⭐ AGREGAR ESTA VERIFICACIÓN:
+        if (!config || !config.enabled) {
+            console.log("Bienvenidas desactivadas o no configuradas");
+            return;
+        }
 
         const channel = member.guild.channels.cache.get(config.channel);
         if (!channel) return console.log("❌ Canal no encontrado para bienvenida");
@@ -668,6 +673,7 @@ app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
 });
 
 // Guardar configuración de reports
+// Guardar configuración de reports
 app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
@@ -680,20 +686,20 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
         
         console.log(`✅ Configuración de reports guardada para ${guildId}`);
         
-        // Notificar en Discord
+        // Notificar en Discord - QUITAR config.enabled
         const guild = client.guilds.cache.get(guildId);
-        if (guild && config.enabled && config.channelId) {
+        if (guild && config.channelId) { // ⭐ SOLO VERIFICAR channelId
             const channel = guild.channels.cache.get(config.channelId);
             if (channel) {
                 await channel.send({
                     embeds: [{
                         color: 0xFFA500,
-                        title: "📝 Sistema de Reports Activado",
+                        title: "📝 Sistema de Reports Configurado",
                         description: "El sistema de reportes ha sido configurado desde el dashboard.",
                         fields: [
                             { name: "Canal", value: `<#${config.channelId}>`, inline: true },
                             { name: "Requiere razón", value: config.requireReason ? "✅ Sí" : "❌ No", inline: true },
-                            { name: "Reportes anónimos", value: config.anonymousReports ? "✅ Sí" : "❌ No", inline: true },
+                            { name: "Auto-eliminar", value: config.autoDeleteReport ? "✅ Sí" : "❌ No", inline: true },
                         ],
                         timestamp: new Date()
                     }]
@@ -715,6 +721,7 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
 // 👇 AGREGAR ESTOS 3 ENDPOINTS
 
 // Obtener lista de reportes
+// Obtener lista de reportes
 app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
     try {
         const { status, limit = 50 } = req.query;
@@ -728,7 +735,22 @@ app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
             .sort({ timestamp: -1 })
             .limit(parseInt(limit));
         
-        res.json(reports);
+        // ⭐ MAPEAR LOS CAMPOS PARA EL FRONTEND
+        const mappedReports = reports.map(report => ({
+            reportId: report.reportId,
+            guildId: report.guildId,
+            type: report.type,
+            reporter: report.reportedBy, // reportedBy -> reporter
+            targetUser: report.targetUser,
+            reason: report.reason,
+            status: report.status,
+            resolution: report.resolution,
+            reviewedBy: report.reviewedBy,
+            reviewedAt: report.reviewedAt,
+            createdAt: report.timestamp // timestamp -> createdAt
+        }));
+        
+        res.json(mappedReports);
     } catch (err) {
         console.error("❌ Error obteniendo reportes:", err);
         res.status(500).json({ error: "Error obteniendo reportes" });

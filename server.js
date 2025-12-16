@@ -16,6 +16,7 @@ import WelcomeConfig from "./models/WelcomeConfig.js";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import fs from "fs";
 import twemoji from "twemoji";
+import AutoMod from "./models/automod.js";
 
 
 
@@ -149,8 +150,8 @@ function wrapText(ctx, text, maxWidth) {
 }
 
 async function generateWelcomeImage({ bgColor, image, textColor, fontSize, message }) {
-    const width = 1200;
-    const height = 500;
+    const width = 1000;
+    const height = 700;
 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext("2d");
@@ -543,14 +544,108 @@ app.get("/api/:guildId/growth", verifyToken, async (req, res) => {
 
 
 /* =======================================================
-================   CONFIGURACIONES   ===================
+================   GET WELCOME CONFIG   =================
 ======================================================= */
-
-app.post("/api/:guildId/moderation", verifyToken, (req, res) => {
-    io.emit("update-moderation", { guildId: req.params.guildId, config: req.body });
-    res.json({ success: true });
+app.get("/api/:guildId/welcome", verifyToken, async (req, res) => {
+    try {
+        const config = await WelcomeConfig.findOne({ guildId: req.params.guildId });
+        res.json(config || {});
+    } catch (err) {
+        console.error("Error obteniendo config:", err);
+        res.status(500).json({ error: "Error obteniendo configuración" });
+    }
 });
 
+/* =======================================================
+================   MODERATION CONFIG   ==================
+======================================================= */
+
+// Obtener configuración de moderación
+app.get("/api/:guildId/moderation", verifyToken, async (req, res) => {
+    try {
+        const config = await AutoMod.findOne({ guildId: req.params.guildId });
+        
+        // Convertir de tu estructura a la del dashboard
+        const dashboardFormat = config ? {
+            antiLinks: config.enlaces || false,
+            enlacesChannels: config.enlacesChannels || [],
+            antiSpam: config.spam || false,
+            spamChannels: config.spamChannels || [],
+            antiInvites: config.invitaciones || false,
+            invitacionesChannels: config.invitacionesChannels || [],
+            maxMentions: 3,
+            mencionesChannels: config.mencionesChannels || [],
+            mayusculas: config.mayusculas || false,
+            mayusculasChannels: config.mayusculasChannels || [],
+            logChannel: ""
+        } : {};
+        
+        res.json(dashboardFormat);
+    } catch (err) {
+        console.error("❌ Error obteniendo moderación:", err);
+        res.status(500).json({ error: "Error obteniendo configuración" });
+    }
+});
+
+// Guardar configuración de moderación
+app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
+    try {
+        const { guildId } = req.params;
+        const data = req.body;
+        
+        // Convertir del dashboard a tu estructura
+        const automodData = {
+            guildId,
+            enlaces: data.antiLinks || false,
+            enlacesChannels: data.enlacesChannels || [],
+            spam: data.antiSpam || false,
+            spamChannels: data.spamChannels || [],
+            invitaciones: data.antiInvites || false,
+            invitacionesChannels: data.invitacionesChannels || [],
+            menciones: data.maxMentions > 0 || false,
+            mencionesChannels: data.mencionesChannels || [],
+            mayusculas: data.mayusculas || false,
+            mayusculasChannels: data.mayusculasChannels || []
+        };
+        
+        const config = await AutoMod.findOneAndUpdate(
+            { guildId },
+            automodData,
+            { new: true, upsert: true }
+        );
+        
+        console.log(`✅ Configuración de moderación guardada para ${guildId}`);
+        
+        // Notificar en Discord (opcional)
+        const guild = client.guilds.cache.get(guildId);
+        if (guild && data.logChannel) {
+            const logChannel = guild.channels.cache.get(data.logChannel);
+            if (logChannel) {
+                await logChannel.send({
+                    embeds: [{
+                        color: 0x00ff00,
+                        title: "⚙️ AutoMod Actualizado desde el Dashboard",
+                        fields: [
+                            { name: "🔗 Anti-Links", value: config.enlaces ? "✅ ON" : "❌ OFF", inline: true },
+                            { name: "📨 Anti-Spam", value: config.spam ? "✅ ON" : "❌ OFF", inline: true },
+                            { name: "📢 Anti-Invites", value: config.invitaciones ? "✅ ON" : "❌ OFF", inline: true },
+                            { name: "🔠 Mayúsculas", value: config.mayusculas ? "✅ ON" : "❌ OFF", inline: true },
+                        ],
+                        timestamp: new Date()
+                    }]
+                });
+            }
+        }
+        
+        // Emitir por socket
+        io.emit("update-moderation", { guildId, config });
+        
+        res.json({ ok: true, saved: config });
+    } catch (err) {
+        console.error("❌ Error guardando moderación:", err);
+        res.status(500).json({ error: "Error guardando configuración" });
+    }
+});
 /* =======================================================
 ================   START SERVER   ======================
 ======================================================= */

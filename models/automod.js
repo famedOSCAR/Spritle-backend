@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from "mongoose";
 
 const autoModSchema = new mongoose.Schema({
     guildId: { type: String, required: true },

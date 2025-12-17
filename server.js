@@ -61,7 +61,7 @@ app.use(cors({
         "http://localhost:5173",
         "https://spritle-backend-iqn3.onrender.com"
     ],
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
 }));
@@ -674,20 +674,32 @@ app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
 
 // Guardar configuración de reports
 // Guardar configuración de reports
+// Guardar configuración de reports
 app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
-        const ReportsConfig = require('./models/ReportsConfig'); // Tu modelo del dashboard
+        
+        // ⭐ SINCRONIZAR channelId y reportChannelId ANTES de guardar
+        const dataToSave = { 
+            ...req.body, 
+            guildId 
+        };
+        
+        // Si viene channelId, copiar a reportChannelId
+        if (dataToSave.channelId) {
+            dataToSave.reportChannelId = dataToSave.channelId;
+        }
         
         const config = await ReportsConfig.findOneAndUpdate(
             { guildId },
-            { ...req.body, guildId },
+            dataToSave,
             { new: true, upsert: true }
         );
         
         console.log(`✅ Configuración de reports guardada para ${guildId}`);
+        console.log(`📋 Config guardada:`, config); // ⭐ LOG PARA VER QUÉ SE GUARDÓ
         
-        // ⭐ ENVIAR NOTIFICACIÓN EN EL FORMATO DE TU BOT
+        // Notificar en Discord
         const guild = client.guilds.cache.get(guildId);
         if (guild && config.channelId) {
             const channel = guild.channels.cache.get(config.channelId);
@@ -727,14 +739,19 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
                         footer: { text: 'Sistema configurado correctamente' },
                         timestamp: new Date()
                     }]
+                }).catch(err => {
+                    console.error("❌ Error enviando embed al canal:", err);
                 });
+            } else {
+                console.warn(`⚠️ Canal ${config.channelId} no encontrado en el servidor`);
             }
         }
         
         res.json({ ok: true, saved: config });
     } catch (err) {
         console.error("❌ Error guardando reports config:", err);
-        res.status(500).json({ error: "Error guardando configuración" });
+        console.error("Stack trace:", err.stack); // ⭐ MÁS INFO DEL ERROR
+        res.status(500).json({ error: "Error guardando configuración", details: err.message });
     }
 });
 
@@ -780,26 +797,178 @@ app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
     }
 });
 
-// Obtener estadísticas
-app.get("/api/:guildId/reports/stats", verifyToken, async (req, res) => {
+app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
     try {
-        const guildId = req.params.guildId;
+        const { reportId } = req.params;
+        const { status, resolution } = req.body;
+        const { guildId } = req.params;
         
-        const [total, pending, resolved, dismissed] = await Promise.all([
-            Report.countDocuments({ guildId }),
-            Report.countDocuments({ guildId, status: 'pending' }),
-            Report.countDocuments({ guildId, status: 'resolved' }),
-            Report.countDocuments({ guildId, status: 'dismissed' })
-        ]);
+        console.log(`📝 Actualizando reporte ${reportId} a estado: ${status}`);
         
-        res.json({ total, pending, resolved, dismissed, topReported: [] });
+        const report = await Report.findOneAndUpdate(
+            { reportId },
+            {
+                status,
+                resolution,
+                reviewedBy: req.user.id,
+                reviewedAt: new Date()
+            },
+            { new: true }
+        );
+        
+        if (!report) {
+            console.error(`❌ Reporte ${reportId} no encontrado`);
+            return res.status(404).json({ error: "Reporte no encontrado" });
+        }
+
+        console.log(`✅ Reporte actualizado: ${reportId}`);
+
+        const guild = client.guilds.cache.get(guildId);
+        
+        if (guild) {
+            const reportConfig = await ReportsConfig.findOne({ guildId });
+            console.log(`📋 Config encontrada:`, reportConfig); // ⭐ LOG
+            
+            if (reportConfig && (reportConfig.reportChannelId || reportConfig.channelId)) {
+                const channelId = reportConfig.reportChannelId || reportConfig.channelId;
+                console.log(`📢 Intentando enviar al canal: ${channelId}`); // ⭐ LOG
+                
+                const channel = guild.channels.cache.get(channelId);
+                
+                if (channel) {
+                    const reporter = await guild.members.fetch(report.reportedBy).catch(() => null);
+                    const target = await guild.members.fetch(report.targetUser).catch(() => null);
+
+                    const targetHistory = await Report.countDocuments({
+                        guildId,
+                        targetUser: report.targetUser,
+                        status: { $in: ['resolved', 'reviewing'] }
+                    });
+
+                    const priorityColors = {
+                        low: 0x95a5a6,
+                        medium: 0xf39c12,
+                        high: 0xe74c3c,
+                        critical: 0x992d22
+                    };
+
+                    const statusEmojis = {
+                        pending: '🟡',
+                        reviewing: '🔵',
+                        resolved: '✅',
+                        dismissed: '❌'
+                    };
+
+                    const typeDisplays = {
+                        spam: 'Spam',
+                        harassment: 'Acoso',
+                        nsfw: 'Contenido NSFW',
+                        scam: 'Estafa/Phishing',
+                        hate_speech: 'Discurso de Odio',
+                        threats: 'Amenazas',
+                        rule_violation: 'Violación de Reglas',
+                        other: 'Otro'
+                    };
+
+                    const priorityEmojis = {
+                        low: '🟢',
+                        medium: '🟡',
+                        high: '🔴',
+                        critical: '🚨'
+                    };
+
+                    const embed = {
+                        color: priorityColors[report.priority] || 0xf39c12,
+                        title: `${statusEmojis[status]} Reporte Actualizado`,
+                        description: `**ID:** \`${reportId}\`\n**Tipo:** ${typeDisplays[report.type] || 'Otro'}`,
+                        fields: [
+                            {
+                                name: 'Reportado Por',
+                                value: reporter 
+                                    ? `${reporter.user.tag}\n\`${reporter.id}\`\n✓ Verificado` 
+                                    : 'Usuario Desconocido',
+                                inline: true
+                            },
+                            {
+                                name: 'Usuario Reportado',
+                                value: target 
+                                    ? `${target.user.tag}\n\`${target.id}\`\n${targetHistory > 0 ? `⚠️ ${targetHistory} reporte(s) previo(s)` : 'Sin historial'}` 
+                                    : 'Usuario Desconocido',
+                                inline: true
+                            },
+                            {
+                                name: 'Canal',
+                                value: `<#${report.channelId}>`,
+                                inline: true
+                            },
+                            {
+                                name: 'Nuevo Estado',
+                                value: status.charAt(0).toUpperCase() + status.slice(1),
+                                inline: true
+                            },
+                            {
+                                name: 'Revisado Por',
+                                value: `<@${req.user.id}>`,
+                                inline: true
+                            },
+                            {
+                                name: 'Prioridad',
+                                value: `${priorityEmojis[report.priority]} ${report.priority.charAt(0).toUpperCase() + report.priority.slice(1)}`,
+                                inline: true
+                            }
+                        ],
+                        timestamp: new Date()
+                    };
+
+                    if (report.reason) {
+                        embed.fields.push({
+                            name: 'Razón del Reporte',
+                            value: report.reason.substring(0, 1024),
+                            inline: false
+                        });
+                    }
+
+                    if (resolution) {
+                        embed.fields.push({
+                            name: 'Resolución',
+                            value: resolution,
+                            inline: false
+                        });
+                    }
+
+                    if (report.similarReports > 0) {
+                        embed.fields.push({
+                            name: 'Alertas',
+                            value: `⚠️ **${report.similarReports}** reportes similares`,
+                            inline: false
+                        });
+                    }
+
+                    await channel.send({
+                        embeds: [embed]
+                    }).then(() => {
+                        console.log(`✅ Embed enviado correctamente al canal ${channelId}`);
+                    }).catch(err => {
+                        console.error("❌ Error enviando embed:", err);
+                    });
+                } else {
+                    console.warn(`⚠️ Canal ${channelId} no encontrado`);
+                }
+            } else {
+                console.warn(`⚠️ No hay configuración de reportes para ${guildId}`);
+            }
+        } else {
+            console.warn(`⚠️ Guild ${guildId} no encontrado en la cache del bot`);
+        }
+        
+        res.json({ ok: true, report });
     } catch (err) {
-        console.error("❌ Error obteniendo stats:", err);
-        res.status(500).json({ error: "Error obteniendo estadísticas" });
+        console.error("❌ Error actualizando reporte:", err);
+        console.error("Stack:", err.stack);
+        res.status(500).json({ error: "Error actualizando reporte", details: err.message });
     }
 });
 
-// Actualizar estado
 // Actualizar estado de reporte
 app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
     try {

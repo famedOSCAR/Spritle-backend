@@ -1,4 +1,4 @@
-// models/ReportsConfig.js (BACKEND) - ⭐ SCHEMA CORREGIDO
+// models/ReportsConfig.js (BACKEND) - ⭐ MIDDLEWARE CORREGIDO
 import mongoose from "mongoose";
 
 const ReportsConfigSchema = new mongoose.Schema({
@@ -66,17 +66,27 @@ ReportsConfigSchema.pre('save', function(next) {
     next();
 });
 
-// ⭐ Middleware para findOneAndUpdate
+// ⭐ CORREGIDO: Middleware para findOneAndUpdate SIN async
 ReportsConfigSchema.pre('findOneAndUpdate', function(next) {
     const update = this.getUpdate();
     
-    // Si se actualiza channelId en el update
-    if (update.channelId || update.$set?.channelId) {
-        const newChannelId = update.channelId || update.$set?.channelId;
-        if (update.$set) {
-            update.$set.reportChannelId = newChannelId;
-        } else {
-            update.reportChannelId = newChannelId;
+    // Manejar tanto $set como updates directos
+    if (update.$set) {
+        // Si se actualiza channelId
+        if (update.$set.channelId) {
+            update.$set.reportChannelId = update.$set.channelId;
+        }
+        // Si se actualiza reportChannelId
+        if (update.$set.reportChannelId) {
+            update.$set.channelId = update.$set.reportChannelId;
+        }
+    } else {
+        // Updates directos sin $set
+        if (update.channelId) {
+            update.reportChannelId = update.channelId;
+        }
+        if (update.reportChannelId) {
+            update.channelId = update.reportChannelId;
         }
     }
     

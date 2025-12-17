@@ -50,5 +50,4 @@ const ReportsConfigSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// SIN MIDDLEWARES - La sincronización se hace en server.js
 export default mongoose.model("ReportConfig", ReportsConfigSchema);

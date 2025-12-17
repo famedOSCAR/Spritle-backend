@@ -1,5 +1,10 @@
-// models/ReportsConfig.js (BACKEND) - ⭐ MIDDLEWARE CORREGIDO
+// models/ReportsConfig.js (BACKEND)
 import mongoose from "mongoose";
+
+// Eliminar modelo si existe (evita cache)
+if (mongoose.models.ReportConfig) {
+    delete mongoose.models.ReportConfig;
+}
 
 const ReportsConfigSchema = new mongoose.Schema({
     guildId: { 
@@ -10,10 +15,8 @@ const ReportsConfigSchema = new mongoose.Schema({
     },
     channelId: { 
         type: String, 
-        required: true,
         default: "" 
     },
-    // ⭐ Mantener reportChannelId solo para compatibilidad con bot antiguo
     reportChannelId: { 
         type: String, 
         default: "" 
@@ -47,50 +50,5 @@ const ReportsConfigSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// ⭐ Middleware para mantener sincronizados channelId y reportChannelId
-ReportsConfigSchema.pre('save', function(next) {
-    // Si se actualiza channelId, actualizar reportChannelId
-    if (this.isModified('channelId') && this.channelId) {
-        this.reportChannelId = this.channelId;
-    }
-    // Si se actualiza reportChannelId, actualizar channelId
-    else if (this.isModified('reportChannelId') && this.reportChannelId) {
-        this.channelId = this.reportChannelId;
-    }
-    // Si solo uno tiene valor, sincronizar
-    else if (this.channelId && !this.reportChannelId) {
-        this.reportChannelId = this.channelId;
-    } else if (this.reportChannelId && !this.channelId) {
-        this.channelId = this.reportChannelId;
-    }
-    next();
-});
-
-// ⭐ CORREGIDO: Middleware para findOneAndUpdate SIN async
-ReportsConfigSchema.pre('findOneAndUpdate', function(next) {
-    const update = this.getUpdate();
-    
-    // Manejar tanto $set como updates directos
-    if (update.$set) {
-        // Si se actualiza channelId
-        if (update.$set.channelId) {
-            update.$set.reportChannelId = update.$set.channelId;
-        }
-        // Si se actualiza reportChannelId
-        if (update.$set.reportChannelId) {
-            update.$set.channelId = update.$set.reportChannelId;
-        }
-    } else {
-        // Updates directos sin $set
-        if (update.channelId) {
-            update.reportChannelId = update.channelId;
-        }
-        if (update.reportChannelId) {
-            update.channelId = update.reportChannelId;
-        }
-    }
-    
-    next();
-});
-
+// SIN MIDDLEWARES - La sincronización se hace en server.js
 export default mongoose.model("ReportConfig", ReportsConfigSchema);

@@ -1,3 +1,4 @@
+// models/Report.js (BACKEND)
 import mongoose from "mongoose";
 
 const reportSchema = new mongoose.Schema({
@@ -52,7 +53,7 @@ const reportSchema = new mongoose.Schema({
     },
     context: {
         type: Array,
-        default: [] // Mensajes de contexto (5 antes, 5 después)
+        default: []
     },
     similarReports: {
         type: Number,
@@ -80,7 +81,8 @@ const reportSchema = new mongoose.Schema({
         index: true
     }
 }, {
-    timestamps: true
+    timestamps: true,
+    collection: 'reports' // ⭐ ASEGÚRATE DE QUE DIGA ESTO
 });
 
 reportSchema.index({ guildId: 1, status: 1, timestamp: -1 });

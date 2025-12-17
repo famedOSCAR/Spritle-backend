@@ -669,29 +669,18 @@ app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
 });
 
 // Guardar configuración de reports
+// Guardar configuración de reports
 app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
         
-        // ⭐ SINCRONIZAR channelId y reportChannelId ANTES de guardar
-        const dataToSave = { 
-            ...req.body, 
-            guildId 
-        };
-        
-        // Si viene channelId, copiar a reportChannelId
-        if (dataToSave.channelId) {
-            dataToSave.reportChannelId = dataToSave.channelId;
-        }
-        
         const config = await ReportConfig.findOneAndUpdate(
             { guildId },
-            dataToSave,
+            { ...req.body, guildId },
             { new: true, upsert: true }
         );
         
         console.log(`✅ Configuración de reports guardada para ${guildId}`);
-        console.log(`📋 Config guardada:`, config); // ⭐ LOG PARA VER QUÉ SE GUARDÓ
         
         // Notificar en Discord
         const guild = client.guilds.cache.get(guildId);
@@ -701,7 +690,7 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
                 await channel.send({
                     embeds: [{
                         color: 0x43b581,
-                        title: '<:signo:1429145571389608028> Sistema de Reportes Configurado',
+                        title: '⚙️ Sistema de Reportes Configurado',
                         description: 'El sistema de reportes ha sido configurado desde el dashboard.\n\n**Los reportes se enviarán automáticamente a este canal.**',
                         fields: [
                             { 
@@ -733,18 +722,13 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
                         footer: { text: 'Sistema configurado correctamente' },
                         timestamp: new Date()
                     }]
-                }).catch(err => {
-                    console.error("❌ Error enviando embed al canal:", err);
-                });
-            } else {
-                console.warn(`⚠️ Canal ${config.channelId} no encontrado en el servidor`);
+                }).catch(err => console.error("❌ Error enviando embed:", err));
             }
         }
         
         res.json({ ok: true, saved: config });
     } catch (err) {
         console.error("❌ Error guardando reports config:", err);
-        console.error("Stack trace:", err.stack); // ⭐ MÁS INFO DEL ERROR
         res.status(500).json({ error: "Error guardando configuración", details: err.message });
     }
 });
@@ -756,7 +740,7 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
 // Obtener estadísticas
 app.get("/api/:guildId/reports/stats", verifyToken, async (req, res) => {
     try {
-        const guildId = req.params.guildId;
+        const { guildId } = req.params;
         
         console.log(`📊 Obteniendo stats para guild: ${guildId}`);
         
@@ -776,6 +760,7 @@ app.get("/api/:guildId/reports/stats", verifyToken, async (req, res) => {
     }
 });
 
+// Obtener lista de reportes
 app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
     try {
         const { status, limit = 50 } = req.query;
@@ -816,11 +801,11 @@ app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
     }
 });
 
+// Actualizar estado de reporte
 app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
     try {
-        const { reportId } = req.params;
+        const { reportId, guildId } = req.params;
         const { status, resolution } = req.body;
-        const { guildId } = req.params;
         
         console.log(`📝 Actualizando reporte ${reportId} a estado: ${status}`);
         
@@ -842,17 +827,14 @@ app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
 
         console.log(`✅ Reporte actualizado: ${reportId}`);
 
+        // Enviar notificación a Discord
         const guild = client.guilds.cache.get(guildId);
         
         if (guild) {
             const reportConfig = await ReportConfig.findOne({ guildId });
-            console.log(`📋 Config encontrada:`, reportConfig);
             
-            if (reportConfig && (reportConfig.reportChannelId || reportConfig.channelId)) {
-                const channelId = reportConfig.reportChannelId || reportConfig.channelId;
-                console.log(`📢 Intentando enviar al canal: ${channelId}`);
-                
-                const channel = guild.channels.cache.get(channelId);
+            if (reportConfig && reportConfig.channelId) {
+                const channel = guild.channels.cache.get(reportConfig.channelId);
                 
                 if (channel) {
                     const reporter = await guild.members.fetch(report.reportedBy).catch(() => null);
@@ -963,30 +945,43 @@ app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
                         });
                     }
 
-                    await channel.send({
-                        embeds: [embed]
-                    }).then(() => {
-                        console.log(`✅ Embed enviado correctamente al canal ${channelId}`);
-                    }).catch(err => {
-                        console.error("❌ Error enviando embed:", err);
-                    });
+                    await channel.send({ embeds: [embed] })
+                        .then(() => console.log(`✅ Embed enviado al canal ${reportConfig.channelId}`))
+                        .catch(err => console.error("❌ Error enviando embed:", err));
                 } else {
-                    console.warn(`⚠️ Canal ${channelId} no encontrado`);
+                    console.warn(`⚠️ Canal ${reportConfig.channelId} no encontrado`);
                 }
             } else {
                 console.warn(`⚠️ No hay configuración de reportes para ${guildId}`);
             }
-        } else {
-            console.warn(`⚠️ Guild ${guildId} no encontrado en la cache del bot`);
         }
         
         res.json({ ok: true, report });
     } catch (err) {
         console.error("❌ Error actualizando reporte:", err);
-        console.error("Stack:", err.stack);
         res.status(500).json({ error: "Error actualizando reporte", details: err.message });
     }
 });
+
+// Eliminar reporte
+app.delete("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
+    try {
+        const { reportId } = req.params;
+        
+        const report = await Report.findOneAndDelete({ reportId });
+        
+        if (!report) {
+            return res.status(404).json({ error: "Reporte no encontrado" });
+        }
+        
+        console.log(`🗑️ Reporte ${reportId} eliminado`);
+        res.json({ ok: true, message: "Reporte eliminado" });
+    } catch (err) {
+        console.error("❌ Error eliminando reporte:", err);
+        res.status(500).json({ error: "Error eliminando reporte" });
+    }
+});
+
 /* =======================================================
 ================   START SERVER   ======================
 ======================================================= */

@@ -657,37 +657,82 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
 ================   REPORTS CONFIG   =====================
 ======================================================= */
 
-// Obtener configuración de reports
+// ✅ CORREGIDO: Obtener configuración de reports
 app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
         const config = await ReportConfig.findOne({ guildId: req.params.guildId });
-        res.json(config || {});
+        
+        // ⭐ Asegurarse de devolver todos los campos necesarios
+        if (!config) {
+            return res.json({
+                channelId: "",
+                cooldown: 5,
+                dailyLimit: 10,
+                enabled: true
+            });
+        }
+
+        // ⭐ Devolver objeto limpio con los campos correctos
+        res.json({
+            channelId: config.channelId || config.reportChannelId || "",
+            cooldown: config.cooldown || 5,
+            dailyLimit: config.dailyLimit || 10,
+            minRoleToReport: config.minRoleToReport || "",
+            autoDeleteReport: config.autoDeleteReport !== undefined ? config.autoDeleteReport : true,
+            enabled: config.enabled !== undefined ? config.enabled : true
+        });
     } catch (err) {
         console.error("❌ Error obteniendo reports config:", err);
         res.status(500).json({ error: "Error obteniendo configuración" });
     }
 });
 
-// Guardar configuración de reports
-// Guardar configuración de reports
+// ✅ CORREGIDO: Guardar configuración de reports
 app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
+        const { channelId, cooldown, dailyLimit, minRoleToReport, autoDeleteReport, enabled } = req.body;
+
+        // ⭐ Validar que el canal existe
+        if (!channelId) {
+            return res.status(400).json({ error: "Debes seleccionar un canal" });
+        }
+
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) {
+            return res.status(404).json({ error: "Servidor no encontrado" });
+        }
+
+        const channel = guild.channels.cache.get(channelId);
+        if (!channel) {
+            return res.status(400).json({ error: "El canal seleccionado no existe" });
+        }
+
+        // ⭐ Actualizar AMBOS campos para compatibilidad
+        const updateData = {
+            guildId,
+            channelId,
+            reportChannelId: channelId, // ⭐ Mantener sincronizados
+            cooldown: Math.min(20, Math.max(1, cooldown || 5)),
+            dailyLimit: Math.min(20, Math.max(1, dailyLimit || 10)),
+            minRoleToReport: minRoleToReport || "",
+            autoDeleteReport: autoDeleteReport !== undefined ? autoDeleteReport : true,
+            enabled: enabled !== undefined ? enabled : true
+        };
         
         const config = await ReportConfig.findOneAndUpdate(
             { guildId },
-            { ...req.body, guildId },
+            updateData,
             { new: true, upsert: true }
         );
         
-        console.log(`✅ Configuración de reports guardada para ${guildId}`);
+        console.log(`✅ Configuración de reports guardada para ${guildId}`, config);
         
         // Notificar en Discord
-        const guild = client.guilds.cache.get(guildId);
         if (guild && config.channelId) {
-            const channel = guild.channels.cache.get(config.channelId);
-            if (channel) {
-                await channel.send({
+            const notifyChannel = guild.channels.cache.get(config.channelId);
+            if (notifyChannel) {
+                await notifyChannel.send({
                     embeds: [{
                         color: 0x43b581,
                         title: '⚙️ Sistema de Reportes Configurado',
@@ -705,12 +750,12 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
                             },
                             { 
                                 name: 'Cooldown', 
-                                value: `${config.cooldown || 5} minutos`, 
+                                value: `${config.cooldown} minutos`, 
                                 inline: true 
                             },
                             { 
                                 name: 'Límite Diario', 
-                                value: `${config.dailyLimit || 10} reportes`, 
+                                value: `${config.dailyLimit} reportes`, 
                                 inline: true 
                             },
                             { 
@@ -726,13 +771,23 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
             }
         }
         
-        res.json({ ok: true, saved: config });
+        // ⭐ Devolver la misma estructura que el GET
+        res.json({ 
+            ok: true, 
+            saved: {
+                channelId: config.channelId,
+                cooldown: config.cooldown,
+                dailyLimit: config.dailyLimit,
+                minRoleToReport: config.minRoleToReport,
+                autoDeleteReport: config.autoDeleteReport,
+                enabled: config.enabled
+            }
+        });
     } catch (err) {
         console.error("❌ Error guardando reports config:", err);
         res.status(500).json({ error: "Error guardando configuración", details: err.message });
     }
 });
-
 /* =======================================================
 ================   REPORTS DATA   =======================
 ======================================================= */

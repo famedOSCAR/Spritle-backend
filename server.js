@@ -18,7 +18,7 @@ import fs from "fs";
 import twemoji from "twemoji";
 import AutoMod from "./models/automod.js";
 import Report from "./models/Report.js";
-import ReportsConfig from "./models/ReportsConfig.js";
+import ReportConfig from "./models/ReportsConfig.js";
 
 
 mongoose.connect(process.env.MONGO_URI)
@@ -664,7 +664,7 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
 // Obtener configuración de reports
 app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
-        const config = await ReportsConfig.findOne({ guildId: req.params.guildId });
+        const config = await ReportConfig.findOne({ guildId: req.params.guildId });
         res.json(config || {});
     } catch (err) {
         console.error("❌ Error obteniendo reports config:", err);
@@ -690,7 +690,7 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
             dataToSave.reportChannelId = dataToSave.channelId;
         }
         
-        const config = await ReportsConfig.findOneAndUpdate(
+        const config = await ReportConfig.findOneAndUpdate(
             { guildId },
             dataToSave,
             { new: true, upsert: true }
@@ -826,7 +826,7 @@ app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
         const guild = client.guilds.cache.get(guildId);
         
         if (guild) {
-            const reportConfig = await ReportsConfig.findOne({ guildId });
+            const reportConfig = await ReportConfig.findOne({ guildId });
             console.log(`📋 Config encontrada:`, reportConfig); // ⭐ LOG
             
             if (reportConfig && (reportConfig.reportChannelId || reportConfig.channelId)) {

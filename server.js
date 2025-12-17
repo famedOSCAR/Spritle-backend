@@ -657,10 +657,6 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
 ================   REPORTS CONFIG   =====================
 ======================================================= */
 
-/* =======================================================
-================   REPORTS CONFIG   =====================
-======================================================= */
-
 // Obtener configuración de reports
 app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
@@ -672,8 +668,6 @@ app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
     }
 });
 
-// Guardar configuración de reports
-// Guardar configuración de reports
 // Guardar configuración de reports
 app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
@@ -759,13 +753,37 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
 ================   REPORTS DATA   =======================
 ======================================================= */
 
-// 👇 AGREGAR ESTOS 3 ENDPOINTS
+// Obtener estadísticas
+app.get("/api/:guildId/reports/stats", verifyToken, async (req, res) => {
+    try {
+        const guildId = req.params.guildId;
+        
+        console.log(`📊 Obteniendo stats para guild: ${guildId}`);
+        
+        const [total, pending, resolved, dismissed] = await Promise.all([
+            Report.countDocuments({ guildId }),
+            Report.countDocuments({ guildId, status: 'pending' }),
+            Report.countDocuments({ guildId, status: 'resolved' }),
+            Report.countDocuments({ guildId, status: 'dismissed' })
+        ]);
+        
+        console.log(`Stats: total=${total}, pending=${pending}, resolved=${resolved}, dismissed=${dismissed}`);
+        
+        res.json({ total, pending, resolved, dismissed });
+    } catch (err) {
+        console.error("❌ Error obteniendo stats:", err);
+        res.status(500).json({ error: "Error obteniendo estadísticas" });
+    }
+});
 
-// Obtener lista de reportes
 app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
     try {
         const { status, limit = 50 } = req.query;
-        const query = { guildId: req.params.guildId };
+        const { guildId } = req.params;
+        
+        console.log(`📋 Buscando reportes para guild: ${guildId}, status: ${status}`);
+        
+        const query = { guildId };
         
         if (status && status !== 'all') {
             query.status = status;
@@ -775,19 +793,20 @@ app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
             .sort({ timestamp: -1 })
             .limit(parseInt(limit));
         
-        // ⭐ MAPEAR LOS CAMPOS PARA EL FRONTEND
+        console.log(`📊 Reportes encontrados: ${reports.length}`);
+        
         const mappedReports = reports.map(report => ({
             reportId: report.reportId,
             guildId: report.guildId,
             type: report.type,
-            reporter: report.reportedBy, // reportedBy -> reporter
+            reporter: report.reportedBy,
             targetUser: report.targetUser,
             reason: report.reason,
             status: report.status,
             resolution: report.resolution,
             reviewedBy: report.reviewedBy,
             reviewedAt: report.reviewedAt,
-            createdAt: report.timestamp // timestamp -> createdAt
+            createdAt: report.timestamp
         }));
         
         res.json(mappedReports);
@@ -827,11 +846,11 @@ app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
         
         if (guild) {
             const reportConfig = await ReportConfig.findOne({ guildId });
-            console.log(`📋 Config encontrada:`, reportConfig); // ⭐ LOG
+            console.log(`📋 Config encontrada:`, reportConfig);
             
             if (reportConfig && (reportConfig.reportChannelId || reportConfig.channelId)) {
                 const channelId = reportConfig.reportChannelId || reportConfig.channelId;
-                console.log(`📢 Intentando enviar al canal: ${channelId}`); // ⭐ LOG
+                console.log(`📢 Intentando enviar al canal: ${channelId}`);
                 
                 const channel = guild.channels.cache.get(channelId);
                 
@@ -966,167 +985,6 @@ app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
         console.error("❌ Error actualizando reporte:", err);
         console.error("Stack:", err.stack);
         res.status(500).json({ error: "Error actualizando reporte", details: err.message });
-    }
-});
-
-// Actualizar estado de reporte
-app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
-    try {
-        const { reportId } = req.params;
-        const { status, resolution } = req.body;
-        const { guildId } = req.params;
-        
-        console.log(`📝 Actualizando reporte ${reportId} a estado: ${status}`);
-        
-        const report = await Report.findOneAndUpdate(
-            { reportId },
-            {
-                status,
-                resolution,
-                reviewedBy: req.user.id,
-                reviewedAt: new Date()
-            },
-            { new: true }
-        );
-        
-        if (!report) {
-            console.error(`❌ Reporte ${reportId} no encontrado`);
-            return res.status(404).json({ error: "Reporte no encontrado" });
-        }
-
-        console.log(`✅ Reporte actualizado: ${reportId}`);
-
-        // ⭐ ENVIAR AL CANAL CONFIGURADO CON TU FORMATO
-        const guild = client.guilds.cache.get(guildId);
-        
-        if (guild) {
-            const ReportConfig = require('./models/ReportConfig'); // ⭐ IMPORTAR TU MODELO
-            const reportConfig = await ReportConfig.findOne({ guildId });
-            
-            if (reportConfig && reportConfig.reportChannelId) {
-                const channel = guild.channels.cache.get(reportConfig.reportChannelId);
-                
-                if (channel) {
-                    const reporter = await guild.members.fetch(report.reportedBy).catch(() => null);
-                    const target = await guild.members.fetch(report.targetUser).catch(() => null);
-
-                    // Obtener historial del usuario reportado
-                    const targetHistory = await Report.countDocuments({
-                        guildId,
-                        targetUser: report.targetUser,
-                        status: { $in: ['resolved', 'reviewing'] }
-                    });
-
-                    const priorityColors = {
-                        low: 0x95a5a6,
-                        medium: 0xf39c12,
-                        high: 0xe74c3c,
-                        critical: 0x992d22
-                    };
-
-                    const priorityEmojis = {
-                        low: '🟢',
-                        medium: '🟡',
-                        high: '🔴',
-                        critical: '🚨'
-                    };
-
-                    const statusEmojis = {
-                        pending: '🟡',
-                        reviewing: '🔵',
-                        resolved: '✅',
-                        dismissed: '❌'
-                    };
-
-                    const typeDisplays = {
-                        spam: 'Spam',
-                        harassment: 'Acoso',
-                        nsfw: 'Contenido NSFW',
-                        scam: 'Estafa/Phishing',
-                        hate_speech: 'Discurso de Odio',
-                        threats: 'Amenazas',
-                        rule_violation: 'Violación de Reglas',
-                        other: 'Otro'
-                    };
-
-                    const embed = {
-                        color: priorityColors[report.priority] || 0xf39c12,
-                        title: `${statusEmojis[status]} Reporte Actualizado`,
-                        description: `**ID:** \`${reportId}\`\n**Tipo:** ${typeDisplays[report.type] || 'Otro'}`,
-                        fields: [
-                            {
-                                name: 'Reportado Por',
-                                value: reporter 
-                                    ? `${reporter.user.tag}\n\`${reporter.id}\`\n✓ Verificado` 
-                                    : 'Usuario Desconocido',
-                                inline: true
-                            },
-                            {
-                                name: 'Usuario Reportado',
-                                value: target 
-                                    ? `${target.user.tag}\n\`${target.id}\`\n${targetHistory > 0 ? `⚠️ ${targetHistory} reporte(s) previo(s)` : 'Sin historial'}` 
-                                    : 'Usuario Desconocido',
-                                inline: true
-                            },
-                            {
-                                name: 'Canal',
-                                value: `<#${report.channelId}>`,
-                                inline: true
-                            },
-                            {
-                                name: 'Nuevo Estado',
-                                value: status.charAt(0).toUpperCase() + status.slice(1),
-                                inline: true
-                            },
-                            {
-                                name: 'Revisado Por',
-                                value: `<@${req.user.id}>`,
-                                inline: true
-                            },
-                            {
-                                name: 'Prioridad',
-                                value: `${priorityEmojis[report.priority]} ${report.priority.charAt(0).toUpperCase() + report.priority.slice(1)}`,
-                                inline: true
-                            }
-                        ],
-                        timestamp: new Date()
-                    };
-
-                    if (report.reason) {
-                        embed.fields.push({
-                            name: 'Razón del Reporte',
-                            value: report.reason.substring(0, 1024),
-                            inline: false
-                        });
-                    }
-
-                    if (resolution) {
-                        embed.fields.push({
-                            name: 'Resolución',
-                            value: resolution,
-                            inline: false
-                        });
-                    }
-
-                    if (report.similarReports > 0) {
-                        embed.fields.push({
-                            name: 'Alertas',
-                            value: `⚠️ **${report.similarReports}** reportes similares`,
-                            inline: false
-                        });
-                    }
-
-                    await channel.send({
-                        embeds: [embed]
-                    }).catch(err => console.error("Error enviando embed:", err));
-                }
-            }
-        }
-        
-        res.json({ ok: true, report });
-    } catch (err) {
-        console.error("❌ Error actualizando reporte:", err);
-        res.status(500).json({ error: "Error actualizando reporte" });
     }
 });
 /* =======================================================

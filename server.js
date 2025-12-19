@@ -13,12 +13,11 @@ import GuildGrowth from "./models/GuildGrowth.js";
 import multer from "multer";
 import path from "path";
 import WelcomeConfig from "./models/WelcomeConfig.js";
-import { createCanvas, loadImage } from "@napi-rs/canvas";
 import fs from "fs";
-import twemoji from "twemoji";
 import AutoMod from "./models/automod.js";
 import Report from "./models/Report.js";
 import ReportConfig from "./models/ReportsConfig.js";
+import { generateWelcomeImage, parsePlaceholders } from "./utils/welcomeGenerator.js";
 
 
 mongoose.connect(process.env.MONGO_URI)
@@ -86,163 +85,6 @@ function verifyToken(req, res, next) {
         res.status(403).json({ error: "Invalid token" });
     }
 }
-//welcomes generador
-function isColor(str) {
-    return /^#([0-9A-F]{3}){1,2}$/i.test(str) ||
-        /^rgb/i.test(str) ||
-        /^[a-zA-Z]+$/.test(str);
-}
-// ======================
-// PARSE VARIABLES
-// ======================
-function parsePlaceholders(str, user, guild) {
-    return str
-        .replace(/{user}/g, user.globalName || user.username) // nombre correcto
-        .replace(/{server}/g, guild.name)
-        .replace(/{member}/g, "@" + (user.globalName || user.username))// tag recreado
-        .replace(/{mention}/g, `<@${user.id}>`);
-}
-
-// Convierte emojis a imágenes usando Twemoji
-async function drawTextWithEmojis(ctx, text, x, y, fontSize) {
-    const parsed = twemoji.parse(text, {
-        folder: "72x72",
-        ext: ".png"
-    });
-
-    const parts = parsed.split(/(<img[^>]+>)/g);
-    let offsetX = 0;
-
-    for (const p of parts) {
-        if (p.startsWith("<img")) {
-            const src = p.match(/src="([^"]+)"/)[1];
-            const emoji = await loadImage(src);
-            const size = fontSize * 1.15;
-            ctx.drawImage(emoji, x + offsetX, y - size * 0.75, size, size);
-            offsetX += size * 0.9;
-        } else {
-            ctx.fillText(p, x + offsetX, y);
-            offsetX += ctx.measureText(p).width;
-        }
-    }
-}
-
-// ======================
-// MULTILÍNEA / AUTO AJUSTE
-// ======================
-function wrapText(ctx, text, maxWidth) {
-    const words = text.split(" ");
-    let lines = [];
-    let line = "";
-
-    for (let i = 0; i < words.length; i++) {
-        const testLine = line + words[i] + " ";
-        const width = ctx.measureText(testLine).width;
-
-        if (width > maxWidth) {
-            lines.push(line.trim());
-            line = words[i] + " ";
-        } else {
-            line = testLine;
-        }
-    }
-    lines.push(line.trim());
-    return lines;
-}
-
-async function generateWelcomeImage({ bgColor, image, textColor, fontSize, message }) {
-    const width = 1000;
-    const height = 700;
-
-    const canvas = createCanvas(width, height);
-    const ctx = canvas.getContext("2d");
-
-    // Fondo sólido
-    if (bgColor && isColor(bgColor)) {
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, width, height);
-    }
-
-    // Imagen de fondo
-    if (image) {
-        try {
-            const img = await loadImage("." + image);
-            ctx.drawImage(img, 0, 0, width, height);
-        } catch (err) {
-            console.error("Error cargando imagen:", err);
-        }
-    }
-
-    // TEXTO
-    let realFontSize = Number(fontSize);
-    if (isNaN(realFontSize) || realFontSize < 70) realFontSize = 70;
-
-    ctx.fillStyle = textColor || "#ffffff";
-    ctx.font = `${realFontSize}px Sans`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    const lines = wrapText(ctx, message, width - 200);
-
-    const lineHeight = realFontSize + 10;
-    const top = height / 2 - (lines.length * lineHeight) / 2;
-
-    for (let i = 0; i < lines.length; i++) {
-        await drawTextWithEmojis(
-            ctx,
-            lines[i],
-            width / 2,
-            top + i * lineHeight,
-            realFontSize
-        );
-    }
-
-    const finalName = `/uploads/welcome_${Date.now()}.png`;
-    fs.writeFileSync("." + finalName, canvas.toBuffer("image/png"));
-    return finalName;
-}
-
-app.post("/api/:guildId/welcome", verifyToken, upload.single("image"), async (req, res) => {
-    try {
-        const { guildId } = req.params;
-
-        const {
-            enabled,
-            channel,
-            message,
-            textColor,
-            bgColor,
-            fontSize,
-            textPos
-        } = req.body;
-
-        const image = req.file ? `/uploads/${req.file.filename}` : null;
-
-        const update = {
-            enabled: enabled === 'true' || enabled === true,
-            channel,
-            message,
-            textColor,
-            bgColor,
-            fontSize,
-            textPos
-        };
-
-        if (image) update.image = image;
-
-        const config = await WelcomeConfig.findOneAndUpdate(
-            { guildId },
-            update,
-            { new: true, upsert: true }
-        );
-
-        res.json({ ok: true, saved: config });
-
-    } catch (err) {
-        console.error("❌ Error guardando welcome config:", err);
-        res.status(500).json({ error: "Error guardando configuración" });
-    }
-});
 
 
 /* =======================================================
@@ -297,13 +139,14 @@ client.on("ready", () => {
     });
 });
 
-    client.on("guildMemberAdd", async (member) => {
+    // ✅ REEMPLAZA TODO EL EVENTO con esto:
+client.on("guildMemberAdd", async (member) => {
     try {
         const today = new Date().toISOString().split("T")[0];
         const guildId = member.guild.id;
         const memberCount = member.guild.memberCount;
 
-        // Guardar crecimiento...
+        // Guardar crecimiento
         const exists = await GuildGrowth.findOne({ guildId, date: today });
         if (exists) {
             exists.memberCount = memberCount;
@@ -312,36 +155,55 @@ client.on("ready", () => {
             await GuildGrowth.create({ guildId, date: today, memberCount });
         }
 
-        console.log(`Miembro añadido a ${member.guild.name}, total: ${memberCount}`);
+        console.log(`✅ Miembro añadido a ${member.guild.name}, total: ${memberCount}`);
 
         // BIENVENIDA PERSONALIZADA
         const config = await WelcomeConfig.findOne({ guildId });
         
-        // ⭐ AGREGAR ESTA VERIFICACIÓN:
         if (!config || !config.enabled) {
-            console.log("Bienvenidas desactivadas o no configuradas");
+            console.log("⚠️ Bienvenidas desactivadas o no configuradas");
             return;
         }
 
         const channel = member.guild.channels.cache.get(config.channel);
-        if (!channel) return console.log("❌ Canal no encontrado para bienvenida");
+        if (!channel) {
+            console.log("❌ Canal no encontrado para bienvenida");
+            return;
+        }
 
+        // Parsear mensaje
         const finalMessage = parsePlaceholders(config.message, member.user, member.guild);
 
+        // ⭐ GENERAR IMAGEN MEJORADA (ahora incluye user y guild)
         const finalImage = await generateWelcomeImage({
             bgColor: config.bgColor,
             image: config.image,
             textColor: config.textColor,
             fontSize: config.fontSize,
-            textPos: config.textPos,
-            message: finalMessage
+            message: finalMessage,
+            user: member.user,      // ⭐ Agregar esto
+            guild: member.guild     // ⭐ Agregar esto
         });
 
+        // Enviar imagen
         await channel.send({
-            files: ["." + finalImage]
+            files: [{
+                attachment: "." + finalImage,
+                name: "welcome.png"
+            }]
         });
 
         console.log(`🎉 Bienvenida enviada a ${member.user.username}`);
+
+        // Limpiar imagen temporal después de 5 segundos
+        setTimeout(() => {
+            try {
+                fs.unlinkSync("." + finalImage);
+                console.log(`🗑️ Imagen temporal eliminada`);
+            } catch (err) {
+                console.error("Error eliminando imagen:", err);
+            }
+        }, 5000);
 
     } catch (err) {
         console.error("❌ Error en guildMemberAdd:", err);
@@ -562,16 +424,55 @@ app.get("/api/:guildId/welcome", verifyToken, async (req, res) => {
     }
 });
 
-/* =======================================================
-================   MODERATION CONFIG   ==================
-======================================================= */
+// ⭐ AGREGA ESTO:
+app.post("/api/:guildId/welcome", verifyToken, upload.single("image"), async (req, res) => {
+    try {
+        const { guildId } = req.params;
 
-// Obtener configuración de moderación
+        const {
+            enabled,
+            channel,
+            message,
+            textColor,
+            bgColor,
+            fontSize,
+            textPos
+        } = req.body;
+
+        const image = req.file ? `/uploads/${req.file.filename}` : null;
+
+        const update = {
+            enabled: enabled === 'true' || enabled === true,
+            channel,
+            message,
+            textColor,
+            bgColor,
+            fontSize,
+            textPos
+        };
+
+        if (image) update.image = image;
+
+        const config = await WelcomeConfig.findOneAndUpdate(
+            { guildId },
+            update,
+            { new: true, upsert: true }
+        );
+
+        res.json({ ok: true, saved: config });
+
+    } catch (err) {
+        console.error("❌ Error guardando welcome config:", err);
+        res.status(500).json({ error: "Error guardando configuración" });
+    }
+});
+
+
+//Moderation
 app.get("/api/:guildId/moderation", verifyToken, async (req, res) => {
     try {
         const config = await AutoMod.findOne({ guildId: req.params.guildId });
         
-        // Convertir de tu estructura a la del dashboard
         const dashboardFormat = config ? {
             antiLinks: config.enlaces || false,
             enlacesChannels: config.enlacesChannels || [],

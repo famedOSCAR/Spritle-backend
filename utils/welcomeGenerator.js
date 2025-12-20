@@ -393,8 +393,8 @@ async function generateWelcomeImage({
     showAvatar = true,
     enableBlur = false
 }) {
-    const width = 1200;  // Reducido de 1400 a 1200
-    const height = 450;   // Reducido de 500 a 450
+    const width = 1000;  // Reducido de 1200 a 1000
+    const height = 400;   // Reducido de 450 a 400
 
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext("2d");
@@ -415,13 +415,13 @@ async function generateWelcomeImage({
             const bgImage = await loadImage("." + image);
             ctx.drawImage(bgImage, 0, 0, width, height);
             
-            // Aplicar blur si está habilitado
-            if (enableBlur) {
-                applyStackBlur(canvas, 12);
+            // Aplicar blur si está habilitado Y hay imagen
+            if (enableBlur && image) {
+                applyStackBlur(canvas, 20);  // Blur más intenso
             }
             
-            // Overlay para mejorar legibilidad
-            ctx.fillStyle = enableBlur ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.45)';
+            // Overlay MÁS LIGERO para que la imagen se vea mejor
+            ctx.fillStyle = (enableBlur && image) ? 'rgba(0, 0, 0, 0.25)' : 'rgba(0, 0, 0, 0.35)';
             ctx.fillRect(0, 0, width, height);
         } catch (err) {
             console.error("Error cargando imagen de fondo:", err);
@@ -470,11 +470,11 @@ async function generateWelcomeImage({
     
     let avatarSize = 0;
     let avatarX = 0;
-    let textStartX = 60;
+    let textStartX = 50;
     
     if (showAvatar && user) {
-        avatarSize = 140;
-        avatarX = 110;
+        avatarSize = 120;
+        avatarX = 95;
         const avatarY = height / 2;
         
         const avatarUrl = user.avatar 
@@ -483,7 +483,7 @@ async function generateWelcomeImage({
         
         await drawAvatar(ctx, avatarUrl, avatarX, avatarY, avatarSize);
         
-        textStartX = avatarX + avatarSize / 2 + 70;
+        textStartX = avatarX + avatarSize / 2 + 60;
     }
 
     // ====== TEXTO CON FUENTE ROBUSTA ======
@@ -496,7 +496,7 @@ async function generateWelcomeImage({
     ctx.fillStyle = textColor || "#ffffff";
     ctx.textBaseline = "middle";
 
-    const textMaxWidth = width - textStartX - 60;
+    const textMaxWidth = width - textStartX - 50;
     const lines = wrapText(ctx, message, textMaxWidth);
     
     const lineHeight = realFontSize * 1.3;

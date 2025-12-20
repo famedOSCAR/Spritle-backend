@@ -1,11 +1,6 @@
-
 import { createCanvas, loadImage, GlobalFonts } from "@napi-rs/canvas";
 import fs from "fs";
 import path from "path";
-
-// Registrar fuentes (opcional - mejora la apariencia)
-// Puedes agregar fuentes personalizadas aquí si las tienes
-// GlobalFonts.registerFromPath('./fonts/YourFont.ttf', 'CustomFont');
 
 function isColor(str) {
     return /^#([0-9A-F]{3}){1,2}$/i.test(str) ||
@@ -21,8 +16,6 @@ function parsePlaceholders(str, user, guild) {
         .replace(/{mention}/g, `<@${user.id}>`);
 }
 
-// ✨ MEJORADO: Convierte emojis Unicode a imágenes de Twemoji
-// Reemplaza la función drawTextWithEmojis (línea 27) por esta versión mejorada:
 async function drawTextWithEmojis(ctx, text, x, y, fontSize, maxWidth) {
     const emojiRegex = /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base}\p{Emoji_Modifier}?|\p{Emoji_Component}+)/gu;
     
@@ -49,7 +42,6 @@ async function drawTextWithEmojis(ctx, text, x, y, fontSize, maxWidth) {
             currentX += ctx.measureText(part.content).width;
         } else if (part.type === 'emoji') {
             try {
-                // ⭐ Convertir todos los codepoints para emojis compuestos
                 const codepoints = [...part.content]
                     .map(char => char.codePointAt(0).toString(16))
                     .join('-');
@@ -77,7 +69,6 @@ async function drawTextWithEmojis(ctx, text, x, y, fontSize, maxWidth) {
     }
 }
 
-// ✨ MEJORADO: Ajuste de texto multilínea con mejor espaciado
 function wrapText(ctx, text, maxWidth) {
     const words = text.split(" ");
     let lines = [];
@@ -102,7 +93,6 @@ function wrapText(ctx, text, maxWidth) {
     return lines;
 }
 
-// ✨ MEJORADO: Añadir sombra al texto para mejor legibilidad
 function addTextShadow(ctx, color = 'rgba(0, 0, 0, 0.7)', blur = 8, offsetX = 0, offsetY = 4) {
     ctx.shadowColor = color;
     ctx.shadowBlur = blur;
@@ -110,7 +100,6 @@ function addTextShadow(ctx, color = 'rgba(0, 0, 0, 0.7)', blur = 8, offsetX = 0,
     ctx.shadowOffsetY = offsetY;
 }
 
-// ✨ MEJORADO: Remover sombra
 function clearTextShadow(ctx) {
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
@@ -118,12 +107,52 @@ function clearTextShadow(ctx) {
     ctx.shadowOffsetY = 0;
 }
 
-// ✨ NUEVO: Dibujar avatar del usuario con borde circular
+// ✨ NUEVO: Aplicar efecto blur gaussiano
+function applyGaussianBlur(ctx, width, height, radius) {
+    if (radius <= 0) return;
+    
+    // Obtener los datos de imagen
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const pixels = imageData.data;
+    
+    // Aplicar blur horizontal y vertical
+    const blurRadius = Math.min(radius, 50); // Limitar el radio máximo
+    
+    for (let i = 0; i < 2; i++) {
+        const horizontal = i === 0;
+        
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let r = 0, g = 0, b = 0, a = 0, count = 0;
+                
+                for (let offset = -blurRadius; offset <= blurRadius; offset++) {
+                    const sampleX = horizontal ? Math.max(0, Math.min(width - 1, x + offset)) : x;
+                    const sampleY = horizontal ? y : Math.max(0, Math.min(height - 1, y + offset));
+                    const idx = (sampleY * width + sampleX) * 4;
+                    
+                    r += pixels[idx];
+                    g += pixels[idx + 1];
+                    b += pixels[idx + 2];
+                    a += pixels[idx + 3];
+                    count++;
+                }
+                
+                const idx = (y * width + x) * 4;
+                pixels[idx] = r / count;
+                pixels[idx + 1] = g / count;
+                pixels[idx + 2] = b / count;
+                pixels[idx + 3] = a / count;
+            }
+        }
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+}
+
 async function drawAvatar(ctx, avatarUrl, x, y, size) {
     try {
         const avatar = await loadImage(avatarUrl);
         
-        // Guardar contexto
         ctx.save();
         
         // Crear clip circular
@@ -135,22 +164,33 @@ async function drawAvatar(ctx, avatarUrl, x, y, size) {
         // Dibujar avatar
         ctx.drawImage(avatar, x - size / 2, y - size / 2, size, size);
         
-        // Restaurar contexto
         ctx.restore();
         
-        // Dibujar borde circular
+        // Borde con gradiente
+        const gradient = ctx.createLinearGradient(x - size / 2, y - size / 2, x + size / 2, y + size / 2);
+        gradient.addColorStop(0, '#5865F2');
+        gradient.addColorStop(0.5, '#EB459E');
+        gradient.addColorStop(1, '#ED4245');
+        
         ctx.beginPath();
         ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 6;
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 8;
         ctx.stroke();
         
-        // Borde exterior con sombra
+        // Sombra exterior
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 20;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 8;
+        
         ctx.beginPath();
-        ctx.arc(x, y, size / 2 + 3, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-        ctx.lineWidth = 2;
+        ctx.arc(x, y, size / 2 + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+        ctx.lineWidth = 1;
         ctx.stroke();
+        ctx.restore();
         
         return true;
     } catch (err) {
@@ -159,15 +199,76 @@ async function drawAvatar(ctx, avatarUrl, x, y, size) {
     }
 }
 
-// ✨ MEJORADO: Generador principal con diseño profesional
+// ✨ NUEVO: Dibujar diseño moderno con glassmorphism
+function drawModernBackground(ctx, width, height, bgColor) {
+    // Fondo base
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, '#0f0f1e');
+    gradient.addColorStop(0.5, '#1a1a2e');
+    gradient.addColorStop(1, '#16213e');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Círculos decorativos con blur
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    
+    // Círculo 1 - Superior izquierda
+    const grad1 = ctx.createRadialGradient(width * 0.2, height * 0.3, 0, width * 0.2, height * 0.3, 300);
+    grad1.addColorStop(0, '#5865F2');
+    grad1.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad1;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Círculo 2 - Inferior derecha
+    const grad2 = ctx.createRadialGradient(width * 0.8, height * 0.7, 0, width * 0.8, height * 0.7, 250);
+    grad2.addColorStop(0, '#EB459E');
+    grad2.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad2;
+    ctx.fillRect(0, 0, width, height);
+    
+    ctx.restore();
+}
+
+// ✨ NUEVO: Panel con glassmorphism
+function drawGlassmorphicPanel(ctx, x, y, width, height, blur = false) {
+    ctx.save();
+    
+    // Sombra del panel
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+    ctx.shadowBlur = 40;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 20;
+    
+    // Fondo del panel
+    ctx.fillStyle = blur ? 'rgba(255, 255, 255, 0.08)' : 'rgba(20, 20, 30, 0.7)';
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 24);
+    ctx.fill();
+    
+    // Borde con gradiente
+    const borderGradient = ctx.createLinearGradient(x, y, x + width, y + height);
+    borderGradient.addColorStop(0, 'rgba(88, 101, 242, 0.5)');
+    borderGradient.addColorStop(0.5, 'rgba(235, 69, 158, 0.5)');
+    borderGradient.addColorStop(1, 'rgba(237, 66, 69, 0.5)');
+    
+    ctx.strokeStyle = borderGradient;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    ctx.restore();
+}
+
 async function generateWelcomeImage({ 
     bgColor, 
     image, 
     textColor, 
     fontSize, 
     message,
-    user,        // Nuevo: objeto del usuario
-    guild        // Nuevo: objeto del servidor
+    user,
+    guild,
+    showAvatar = true,  // ✨ NUEVO: Opción para mostrar/ocultar avatar
+    enableBlur = false   // ✨ NUEVO: Opción para aplicar blur
 }) {
     const width = 1400;
     const height = 500;
@@ -177,134 +278,167 @@ async function generateWelcomeImage({
 
     // ====== FONDO ======
     
-    // Fondo con gradiente por defecto si no hay color/imagen
     if (!bgColor && !image) {
-        const gradient = ctx.createLinearGradient(0, 0, width, height);
-        gradient.addColorStop(0, '#667eea');
-        gradient.addColorStop(1, '#764ba2');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, width, height);
+        drawModernBackground(ctx, width, height);
     }
     
-    // Fondo sólido
     if (bgColor && isColor(bgColor)) {
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, width, height);
     }
 
-    // Imagen de fondo con overlay oscuro para mejor legibilidad
     if (image) {
         try {
             const bgImage = await loadImage("." + image);
             ctx.drawImage(bgImage, 0, 0, width, height);
             
-            // Overlay semi-transparente para mejorar legibilidad
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            // Aplicar blur si está habilitado
+            if (enableBlur) {
+                applyGaussianBlur(ctx, width, height, 8);
+            }
+            
+            // Overlay para mejorar legibilidad
+            ctx.fillStyle = enableBlur ? 'rgba(0, 0, 0, 0.25)' : 'rgba(0, 0, 0, 0.4)';
             ctx.fillRect(0, 0, width, height);
         } catch (err) {
             console.error("Error cargando imagen de fondo:", err);
+            drawModernBackground(ctx, width, height);
         }
     }
-    const vignette = ctx.createRadialGradient(width / 2, height / 2, 200, width / 2, height / 2, width);
-vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
-vignette.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
-ctx.fillStyle = vignette;
-ctx.fillRect(0, 0, width, height);
-    // ====== DECORACIÓN ======
-    
-    // Barra superior decorativa
+
+    // ====== BARRA DECORATIVA SUPERIOR CON GRADIENTE ======
+    const topBarHeight = 5;
     const topGradient = ctx.createLinearGradient(0, 0, width, 0);
-    topGradient.addColorStop(0, 'rgba(59, 130, 246, 0.8)');
-    topGradient.addColorStop(0.5, 'rgba(147, 51, 234, 0.8)');
-    topGradient.addColorStop(1, 'rgba(59, 130, 246, 0.8)');
+    topGradient.addColorStop(0, '#5865F2');
+    topGradient.addColorStop(0.33, '#EB459E');
+    topGradient.addColorStop(0.66, '#ED4245');
+    topGradient.addColorStop(1, '#FEE75C');
     ctx.fillStyle = topGradient;
-    ctx.fillRect(0, 0, width, 8);
+    ctx.fillRect(0, 0, width, topBarHeight);
+
+    // ====== PANEL CENTRAL CON GLASSMORPHISM ======
+    const panelWidth = 1100;
+    const panelHeight = 280;
+    const panelX = (width - panelWidth) / 2;
+    const panelY = (height - panelHeight) / 2;
     
-    // Barra inferior decorativa
-    ctx.fillStyle = topGradient;
-    ctx.fillRect(0, height - 8, width, 8);
+    drawGlassmorphicPanel(ctx, panelX, panelY, panelWidth, panelHeight, enableBlur);
 
     // ====== AVATAR DEL USUARIO ======
     
-    const avatarSize = 140;
-    const avatarX = 120;
-    const avatarY = height / 2;
+    let avatarSize = 0;
+    let avatarX = 0;
+    let textStartX = panelX + 60;
     
-    if (user) {
+    if (showAvatar && user) {
+        avatarSize = 160;
+        avatarX = panelX + 140;
+        const avatarY = height / 2;
+        
         const avatarUrl = user.avatar 
             ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=256`
             : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.id) % 5}.png`;
         
         await drawAvatar(ctx, avatarUrl, avatarX, avatarY, avatarSize);
+        
+        textStartX = avatarX + avatarSize / 2 + 80;
     }
 
-    // ====== TEXTO ======
+    // ====== TEXTO CON FUENTE ROBUSTA (WHITNEY/DISCORD-STYLE) ======
     
     let realFontSize = Number(fontSize);
     if (isNaN(realFontSize) || realFontSize < 40) realFontSize = 40;
     if (realFontSize > 100) realFontSize = 100;
 
-    // Configurar fuente con peso bold para mejor legibilidad
-    ctx.font = `bold ${realFontSize}px "Arial", "Segoe UI Emoji", sans-serif`;
+    // Fuente estilo Discord (Whitney similar)
+    ctx.font = `800 ${realFontSize}px "Arial Black", "Helvetica Neue", "Segoe UI", sans-serif`;
     ctx.fillStyle = textColor || "#ffffff";
     ctx.textBaseline = "middle";
 
-    // Área de texto (después del avatar)
-    const textStartX = avatarX + avatarSize / 2 + 60;
-    const textMaxWidth = width - textStartX - 60;
-    
-    // Dividir mensaje en líneas
+    const textMaxWidth = panelX + panelWidth - textStartX - 60;
     const lines = wrapText(ctx, message, textMaxWidth);
     
-    // Calcular altura total del texto
-    const lineHeight = realFontSize * 1.4;
+    const lineHeight = realFontSize * 1.3;
     const totalTextHeight = lines.length * lineHeight;
     const textStartY = (height - totalTextHeight) / 2 + lineHeight / 2;
 
-    // Dibujar cada línea con sombra para mejor legibilidad
     for (let i = 0; i < lines.length; i++) {
         const y = textStartY + i * lineHeight;
         
-        // Sombra para mejorar legibilidad
-        addTextShadow(ctx, 'rgba(0, 0, 0, 0.8)', 10, 2, 4);
+        // Sombra múltiple para efecto de profundidad
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+        ctx.shadowBlur = 15;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 6;
         
-        // Centrar texto en el área disponible
         const lineWidth = ctx.measureText(lines[i]).width;
         const x = textStartX + (textMaxWidth - lineWidth) / 2;
         
-        // Dibujar texto con emojis
         ctx.textAlign = 'left';
         await drawTextWithEmojis(ctx, lines[i], x, y, realFontSize, textMaxWidth);
         
         clearTextShadow(ctx);
     }
 
-    // ====== SUBTÍTULO (Opcional: nombre del servidor) ======
+    // ====== SUBTÍTULO CON ÍCONO ======
     
     if (guild) {
-    ctx.font = `500 ${realFontSize * 0.4}px "Arial", sans-serif`;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.textAlign = 'center';
-    
-    addTextShadow(ctx, 'rgba(0, 0, 0, 0.6)', 6, 1, 2);
-    
-    const subtitleY = textStartY + lines.length * lineHeight + 30;
-    const subtitleX = textStartX + textMaxWidth / 2;
-    
-    // ⭐ Solo mostrar si hay espacio suficiente
-    if (subtitleY < height - 40) {
-        ctx.fillText(`¡Bienvenido a ${guild.name}!`, subtitleX, subtitleY);
+        const subtitleFontSize = realFontSize * 0.35;
+        ctx.font = `600 ${subtitleFontSize}px "Arial", "Segoe UI", sans-serif`;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.textAlign = 'center';
+        
+        addTextShadow(ctx, 'rgba(0, 0, 0, 0.7)', 8, 0, 3);
+        
+        const subtitleY = textStartY + lines.length * lineHeight + 40;
+        const subtitleX = textStartX + textMaxWidth / 2;
+        
+        if (subtitleY < height - 60) {
+            // Dibujar ícono de servidor (punto decorativo)
+            ctx.fillStyle = '#5865F2';
+            ctx.beginPath();
+            ctx.arc(subtitleX - ctx.measureText(guild.name).width / 2 - 20, subtitleY, 4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.fillText(guild.name, subtitleX, subtitleY);
+            
+            ctx.beginPath();
+            ctx.arc(subtitleX + ctx.measureText(guild.name).width / 2 + 20, subtitleY, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        clearTextShadow(ctx);
     }
+
+    // ====== BADGE/INSIGNIA "NUEVO MIEMBRO" ======
+    const badgeWidth = 160;
+    const badgeHeight = 36;
+    const badgeX = width - 60 - badgeWidth;
+    const badgeY = 60;
     
-    clearTextShadow(ctx);
-}
+    // Fondo del badge
+    const badgeGradient = ctx.createLinearGradient(badgeX, badgeY, badgeX + badgeWidth, badgeY + badgeHeight);
+    badgeGradient.addColorStop(0, 'rgba(88, 101, 242, 0.9)');
+    badgeGradient.addColorStop(1, 'rgba(235, 69, 158, 0.9)');
+    
+    ctx.fillStyle = badgeGradient;
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 18);
+    ctx.fill();
+    
+    // Texto del badge
+    ctx.font = `700 14px "Arial", sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('NUEVO MIEMBRO', badgeX + badgeWidth / 2, badgeY + badgeHeight / 2);
 
     // ====== GUARDAR IMAGEN ======
     
     const finalName = `/uploads/welcome_${Date.now()}.png`;
     const outputPath = path.join(process.cwd(), "." + finalName);
     
-    // Asegurar que la carpeta uploads existe
     const uploadDir = path.join(process.cwd(), "./uploads");
     if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });

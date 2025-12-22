@@ -208,6 +208,7 @@ client.on("guildMemberAdd", async (member) => {
     }
 });
 
+client.login(BOT_TOKEN);
 function updateBotStats() {
     if (!client.isReady()) {
         console.log("⏳ Bot aún no está listo...");
@@ -234,8 +235,6 @@ setInterval(updateBotStats, 20000);
 client.once("ready", () => {
     setTimeout(updateBotStats, 5000);
 });
-
-client.login(BOT_TOKEN);
 
 
 /* =======================================================

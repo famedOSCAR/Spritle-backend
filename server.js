@@ -181,8 +181,8 @@ client.on("guildMemberAdd", async (member) => {
             textColor: config.textColor,
             fontSize: config.fontSize,
             message: finalMessage,
-            user: member.user,      // ⭐ Agregar esto
-            guild: member.guild     // ⭐ Agregar esto
+            user: member.user,
+            guild: member.guild
         });
 
         // Enviar imagen
@@ -194,8 +194,6 @@ client.on("guildMemberAdd", async (member) => {
         });
 
         console.log(`🎉 Bienvenida enviada a ${member.user.username}`);
-
-        // Limpiar imagen temporal después de 5 segundos
         setTimeout(() => {
             try {
                 fs.unlinkSync("." + finalImage);
@@ -208,6 +206,33 @@ client.on("guildMemberAdd", async (member) => {
     } catch (err) {
         console.error("❌ Error en guildMemberAdd:", err);
     }
+});
+
+function updateBotStats() {
+    if (!client.isReady()) {
+        console.log("⏳ Bot aún no está listo...");
+        return;
+    }
+
+    const totalMembers = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
+    
+    const newStats = {
+        ping: client.ws.ping || 0,
+        guilds: client.guilds.cache.size,
+        members: totalMembers,
+        uptime: Math.floor(client.uptime / 1000)
+    };
+
+    botStats = newStats;
+    io.emit("bot-stats", newStats);
+    
+    console.log(`Stats actualizadas: ${newStats.guilds} servidores, ${newStats.members} usuarios, ${newStats.ping}ms`);
+}
+
+setInterval(updateBotStats, 20000);
+
+client.once("ready", () => {
+    setTimeout(updateBotStats, 5000);
 });
 
 client.login(BOT_TOKEN);

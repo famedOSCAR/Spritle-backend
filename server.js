@@ -292,7 +292,7 @@ app.get("/auth/callback", async (req, res) => {
             { expiresIn: "7d" }
         );
 
-        res.redirect(`http://spritlebot.netlify.app/auth/callback?token=${jwtToken}`); //CAMBIARHOST
+        res.redirect(`https://localhost:5173/auth/callback?token=${jwtToken}`); //CAMBIARHOST
     } catch (err) {
         console.error("OAuth error:", err?.response?.data || err);
         res.status(500).send("Error en OAuth");
@@ -583,46 +583,32 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
 ======================================================= */
 
 // ✅ GET - Obtener configuración de reports (CON LOGS DE DEBUG)
+// En tu backend index.js, línea ~730 aprox
 app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
-        
-        console.log(`📥 GET /api/${guildId}/reports - Buscando configuración...`);
-        
         const config = await ReportConfig.findOne({ guildId });
         
-        console.log(`📊 Config encontrado en BD:`, config);
-        
-        // ⭐ Asegurarse de devolver todos los campos necesarios
         if (!config) {
-            console.log(`⚠️ No hay config para ${guildId}, devolviendo defaults`);
             return res.json({
                 channelId: "",
                 cooldown: 5,
                 dailyLimit: 10,
-                enabled: true
+                enabled: false // ⭐ Por defecto desactivado
             });
         }
 
-        // ⭐ Devolver objeto limpio con los campos correctos
         const response = {
             channelId: config.channelId || config.reportChannelId || "",
             cooldown: config.cooldown || 5,
             dailyLimit: config.dailyLimit || 10,
-            minRoleToReport: config.minRoleToReport || "",
-            autoDeleteReport: config.autoDeleteReport !== undefined ? config.autoDeleteReport : true,
-            enabled: config.enabled !== undefined ? config.enabled : true
+            enabled: config.enabled !== undefined ? config.enabled : true // ⭐
         };
-        
-        console.log(`✅ Enviando respuesta al frontend:`, response);
         
         res.json(response);
     } catch (err) {
         console.error("❌ Error obteniendo reports config:", err);
-        res.status(500).json({ 
-            error: "Error obteniendo configuración",
-            details: err.message 
-        });
+        res.status(500).json({ error: "Error obteniendo configuración" });
     }
 });
 

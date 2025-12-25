@@ -493,6 +493,7 @@ app.post("/api/:guildId/welcome", verifyToken, upload.single("image"), async (re
 
 
 //Moderation
+// GET - Obtener configuración de moderación
 app.get("/api/:guildId/moderation", verifyToken, async (req, res) => {
     try {
         const config = await AutoMod.findOne({ guildId: req.params.guildId });
@@ -500,15 +501,23 @@ app.get("/api/:guildId/moderation", verifyToken, async (req, res) => {
         const dashboardFormat = config ? {
             antiLinks: config.enlaces || false,
             enlacesChannels: config.enlacesChannels || [],
+            enlacesTimeout: config.enlacesTimeout || 0, // ⭐ NUEVO
+            
             antiSpam: config.spam || false,
             spamChannels: config.spamChannels || [],
+            spamTimeout: config.spamTimeout || 0, // ⭐ NUEVO
+            
             antiInvites: config.invitaciones || false,
             invitacionesChannels: config.invitacionesChannels || [],
-            maxMentions: 3,
+            invitacionesTimeout: config.invitacionesTimeout || 0, // ⭐ NUEVO
+            
+            antiMentions: config.menciones || false,
             mencionesChannels: config.mencionesChannels || [],
+            mencionesTimeout: config.mencionesTimeout || 0, // ⭐ NUEVO
+            
             mayusculas: config.mayusculas || false,
             mayusculasChannels: config.mayusculasChannels || [],
-            logChannel: ""
+            mayusculasTimeout: config.mayusculasTimeout || 0 // ⭐ NUEVO
         } : {};
         
         res.json(dashboardFormat);
@@ -518,7 +527,7 @@ app.get("/api/:guildId/moderation", verifyToken, async (req, res) => {
     }
 });
 
-// Guardar configuración de moderación
+// POST - Guardar configuración de moderación
 app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
@@ -529,14 +538,23 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
             guildId,
             enlaces: data.antiLinks || false,
             enlacesChannels: data.enlacesChannels || [],
+            enlacesTimeout: data.enlacesTimeout || 0, // ⭐ NUEVO
+            
             spam: data.antiSpam || false,
             spamChannels: data.spamChannels || [],
+            spamTimeout: data.spamTimeout || 0, // ⭐ NUEVO
+            
             invitaciones: data.antiInvites || false,
             invitacionesChannels: data.invitacionesChannels || [],
-            menciones: data.maxMentions > 0 || false,
+            invitacionesTimeout: data.invitacionesTimeout || 0, // ⭐ NUEVO
+            
+            menciones: data.antiMentions || false,
             mencionesChannels: data.mencionesChannels || [],
+            mencionesTimeout: data.mencionesTimeout || 0, // ⭐ NUEVO
+            
             mayusculas: data.mayusculas || false,
-            mayusculasChannels: data.mayusculasChannels || []
+            mayusculasChannels: data.mayusculasChannels || [],
+            mayusculasTimeout: data.mayusculasTimeout || 0 // ⭐ NUEVO
         };
         
         const config = await AutoMod.findOneAndUpdate(
@@ -547,7 +565,7 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
         
         console.log(`✅ Configuración de moderación guardada para ${guildId}`);
         
-        // Notificar en Discord (opcional)
+        // Notificar en Discord
         const guild = client.guilds.cache.get(guildId);
         if (guild && data.logChannel) {
             const logChannel = guild.channels.cache.get(data.logChannel);
@@ -557,10 +575,26 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
                         color: 0x00ff00,
                         title: "⚙️ AutoMod Actualizado desde el Dashboard",
                         fields: [
-                            { name: "🔗 Anti-Links", value: config.enlaces ? "✅ ON" : "❌ OFF", inline: true },
-                            { name: "📨 Anti-Spam", value: config.spam ? "✅ ON" : "❌ OFF", inline: true },
-                            { name: "📢 Anti-Invites", value: config.invitaciones ? "✅ ON" : "❌ OFF", inline: true },
-                            { name: "🔠 Mayúsculas", value: config.mayusculas ? "✅ ON" : "❌ OFF", inline: true },
+                            { 
+                                name: "🔗 Anti-Links", 
+                                value: `${config.enlaces ? "✅ ON" : "❌ OFF"}${config.enlacesTimeout > 0 ? ` (Timeout: ${config.enlacesTimeout/60000}min)` : ''}`, 
+                                inline: true 
+                            },
+                            { 
+                                name: "📨 Anti-Spam", 
+                                value: `${config.spam ? "✅ ON" : "❌ OFF"}${config.spamTimeout > 0 ? ` (Timeout: ${config.spamTimeout/60000}min)` : ''}`, 
+                                inline: true 
+                            },
+                            { 
+                                name: "📢 Anti-Invites", 
+                                value: `${config.invitaciones ? "✅ ON" : "❌ OFF"}${config.invitacionesTimeout > 0 ? ` (Timeout: ${config.invitacionesTimeout/60000}min)` : ''}`, 
+                                inline: true 
+                            },
+                            { 
+                                name: "🔠 Mayúsculas", 
+                                value: `${config.mayusculas ? "✅ ON" : "❌ OFF"}${config.mayusculasTimeout > 0 ? ` (Timeout: ${config.mayusculasTimeout/60000}min)` : ''}`, 
+                                inline: true 
+                            },
                         ],
                         timestamp: new Date()
                     }]

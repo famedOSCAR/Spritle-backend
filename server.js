@@ -10,29 +10,13 @@ import { Client, GatewayIntentBits, ChannelType } from "discord.js";
 import mongoose from "mongoose";
 import cron from "node-cron";
 import GuildGrowth from "./models/GuildGrowth.js";
-import multer from "multer";
-import path from "path";
-import WelcomeConfig from "./models/WelcomeConfig.js";
-import fs from "fs";
 import AutoMod from "./models/automod.js";
 import Report from "./models/Report.js";
 import ReportConfig from "./models/ReportsConfig.js";
-import { generateWelcomeImage, parsePlaceholders } from "./utils/welcomeGenerator.js";
-
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("✅ MongoDB conectado"))
     .catch(err => console.error("❌ Error conectando MongoDB:", err));
-
-const storage = multer.diskStorage({
-    destination: "uploads/",
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        cb(null, `${Date.now()}-${file.fieldname}${ext}`);
-    }
-});
-
-const upload = multer({ storage });
 
 const DISCORD_API = "https://discord.com/api";
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -66,7 +50,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
-app.use("/uploads", express.static("uploads"));
+
 /* =======================================================
 ================   MIDDLEWARE JWT   =====================
 ======================================================= */
@@ -85,7 +69,6 @@ function verifyToken(req, res, next) {
         res.status(403).json({ error: "Invalid token" });
     }
 }
-
 
 /* =======================================================
 ================   BOT STATS (SOCKET.IO)   ==============
@@ -119,12 +102,10 @@ const client = new Client({
         GatewayIntentBits.GuildMessages
     ]
 });
-let botGuildsCache = [];
 
 client.on("ready", () => {
     console.log(`Bot listo: ${client.user.tag}`);
 
-    // Cron diario dentro de ready
     cron.schedule("0 0 * * *", async () => {
         const today = new Date().toISOString().split("T")[0];
 
@@ -139,14 +120,12 @@ client.on("ready", () => {
     });
 });
 
-    // ✅ REEMPLAZA TODO EL EVENTO con esto:
 client.on("guildMemberAdd", async (member) => {
     try {
         const today = new Date().toISOString().split("T")[0];
         const guildId = member.guild.id;
         const memberCount = member.guild.memberCount;
 
-        // Guardar crecimiento
         const exists = await GuildGrowth.findOne({ guildId, date: today });
         if (exists) {
             exists.memberCount = memberCount;
@@ -156,59 +135,13 @@ client.on("guildMemberAdd", async (member) => {
         }
 
         console.log(`✅ Miembro añadido a ${member.guild.name}, total: ${memberCount}`);
-
-        // BIENVENIDA PERSONALIZADA
-        const config = await WelcomeConfig.findOne({ guildId });
-        
-        if (!config || !config.enabled) {
-            console.log("⚠️ Bienvenidas desactivadas o no configuradas");
-            return;
-        }
-
-        const channel = member.guild.channels.cache.get(config.channel);
-        if (!channel) {
-            console.log("❌ Canal no encontrado para bienvenida");
-            return;
-        }
-
-        // Parsear mensaje
-        const finalMessage = parsePlaceholders(config.message, member.user, member.guild);
-
-        // ⭐ GENERAR IMAGEN MEJORADA (ahora incluye user y guild)
-        const finalImage = await generateWelcomeImage({
-            bgColor: config.bgColor,
-            image: config.image,
-            textColor: config.textColor,
-            fontSize: config.fontSize,
-            message: finalMessage,
-            user: member.user,
-            guild: member.guild
-        });
-
-        // Enviar imagen
-        await channel.send({
-            files: [{
-                attachment: "." + finalImage,
-                name: "welcome.png"
-            }]
-        });
-
-        console.log(`🎉 Bienvenida enviada a ${member.user.username}`);
-        setTimeout(() => {
-            try {
-                fs.unlinkSync("." + finalImage);
-                console.log(`🗑️ Imagen temporal eliminada`);
-            } catch (err) {
-                console.error("Error eliminando imagen:", err);
-            }
-        }, 5000);
-
     } catch (err) {
         console.error("❌ Error en guildMemberAdd:", err);
     }
 });
 
 client.login(BOT_TOKEN);
+
 function updateBotStats() {
     if (!client.isReady()) {
         console.log("⏳ Bot aún no está listo...");
@@ -235,7 +168,6 @@ setInterval(updateBotStats, 20000);
 client.once("ready", () => {
     setTimeout(updateBotStats, 5000);
 });
-
 
 /* =======================================================
 ================   DISCORD LOGIN   ======================
@@ -292,7 +224,7 @@ app.get("/auth/callback", async (req, res) => {
             { expiresIn: "7d" }
         );
 
-        res.redirect(`http://localhost:5173/auth/callback?token=${jwtToken}`); //CAMBIARHOST
+        res.redirect(`https://spritlebot.netlify.app/auth/callback?token=${jwtToken}`);
     } catch (err) {
         console.error("OAuth error:", err?.response?.data || err);
         res.status(500).send("Error en OAuth");
@@ -316,15 +248,13 @@ app.get("/api/user", verifyToken, async (req, res) => {
             headers: { Authorization: `Bearer ${discordToken}` }
         }).then(r => r.data);
 
-        const adminPermission = 0x20; // MANAGE_GUILD
+        const adminPermission = 0x20;
 
         const mutualGuilds = userGuilds.filter(guild => {
             const botInGuild = client.guilds.cache.has(guild.id);
             const userHasAdmin = (BigInt(guild.permissions) & BigInt(adminPermission)) === BigInt(adminPermission);
             return botInGuild && userHasAdmin;
         });
-        console.log("Bot ready:", client.isReady());
-        console.log("Guilds en cache:", client.guilds.cache.size);
 
         res.json({ user, servers: mutualGuilds });
     } catch (err) {
@@ -342,15 +272,12 @@ app.get("/api/user-servers", verifyToken, async (req, res) => {
             headers: { Authorization: `Bearer ${discordToken}` }
         }).then(r => r.data);
 
-        const adminPermission = 0x20; // MANAGE_GUILD
+        const adminPermission = 0x20;
 
         const mutualGuilds = userGuilds.filter(guild => {
             const userHasAdmin = (BigInt(guild.permissions) & BigInt(adminPermission)) === BigInt(adminPermission);
             return userHasAdmin;
         });
-        console.log("Bot ready:", client.isReady());
-        console.log("Bot guilds cache:", client.guilds.cache.map(g => g.id));
-        console.log("User guilds:", userGuilds.map(g => g.id));
 
         res.json({ servers: mutualGuilds });
     } catch (err) {
@@ -358,21 +285,19 @@ app.get("/api/user-servers", verifyToken, async (req, res) => {
         res.status(500).json({ error: "Error al obtener servidores" });
     }
 });
-// Obtener estadísticas completas de un servidor
+
 app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
     const { guildId } = req.params;
 
     try {
-        // Verificar que el bot esté en ese servidor
         const guild = client.guilds.cache.get(guildId);
         if (!guild) return res.status(404).json({ error: "Servidor no encontrado" });
 
-        // Información básica del servidor
         const guildInfo = {
             id: guild.id,
             name: guild.name,
             icon: guild.icon,
-            ownerId: guild.ownerId.toString(), // <-- convertir a string
+            ownerId: guild.ownerId.toString(),
             memberCount: guild.memberCount,
             verificationLevel: guild.verificationLevel,
             afkTimeout: guild.afkTimeout,
@@ -380,8 +305,6 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
             features: guild.features
         };
 
-        // Canales
-        // Traer todos los canales del servidor directamente desde Discord
         const channelsFetched = await guild.channels.fetch();
         const channels = channelsFetched
             .filter(ch => ch.type === ChannelType.GuildText || ch.type === ChannelType.GuildAnnouncement)
@@ -395,19 +318,17 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
                 position: ch.position
             }));
 
-
-        // Roles
         const roles = guild.roles.cache.map(role => ({
             id: role.id,
             name: role.name,
             color: role.color,
             position: role.position,
-            permissions: role.permissions.bitfield.toString(), // <-- convertir a string
+            permissions: role.permissions.bitfield.toString(),
             hoist: role.hoist,
             managed: role.managed,
             mentionable: role.mentionable
         }));
-        // Miembros (solo info básica, para no saturar)
+
         const members = guild.members.cache.map(member => ({
             id: member.id,
             bot: member.user.bot
@@ -424,6 +345,7 @@ app.get("/api/:guildId/stats", verifyToken, async (req, res) => {
         res.status(500).json({ error: "Error al obtener estadísticas" });
     }
 });
+
 app.get("/api/:guildId/growth", verifyToken, async (req, res) => {
     try {
         const data = await GuildGrowth.find({ guildId: req.params.guildId }).sort({ date: 1 });
@@ -434,66 +356,10 @@ app.get("/api/:guildId/growth", verifyToken, async (req, res) => {
     }
 });
 
-
 /* =======================================================
-================   GET WELCOME CONFIG   =================
+================   MODERATION   =========================
 ======================================================= */
-app.get("/api/:guildId/welcome", verifyToken, async (req, res) => {
-    try {
-        const config = await WelcomeConfig.findOne({ guildId: req.params.guildId });
-        res.json(config || {});
-    } catch (err) {
-        console.error("Error obteniendo config:", err);
-        res.status(500).json({ error: "Error obteniendo configuración" });
-    }
-});
 
-// ⭐ AGREGA ESTO:
-app.post("/api/:guildId/welcome", verifyToken, upload.single("image"), async (req, res) => {
-    try {
-        const { guildId } = req.params;
-
-        const {
-            enabled,
-            channel,
-            message,
-            textColor,
-            bgColor,
-            fontSize,
-            textPos
-        } = req.body;
-
-        const image = req.file ? `/uploads/${req.file.filename}` : null;
-
-        const update = {
-            enabled: enabled === 'true' || enabled === true,
-            channel,
-            message,
-            textColor,
-            bgColor,
-            fontSize,
-            textPos
-        };
-
-        if (image) update.image = image;
-
-        const config = await WelcomeConfig.findOneAndUpdate(
-            { guildId },
-            update,
-            { new: true, upsert: true }
-        );
-
-        res.json({ ok: true, saved: config });
-
-    } catch (err) {
-        console.error("❌ Error guardando welcome config:", err);
-        res.status(500).json({ error: "Error guardando configuración" });
-    }
-});
-
-
-//Moderation
-// GET - Obtener configuración de moderación
 app.get("/api/:guildId/moderation", verifyToken, async (req, res) => {
     try {
         const config = await AutoMod.findOne({ guildId: req.params.guildId });
@@ -501,23 +367,23 @@ app.get("/api/:guildId/moderation", verifyToken, async (req, res) => {
         const dashboardFormat = config ? {
             antiLinks: config.enlaces || false,
             enlacesChannels: config.enlacesChannels || [],
-            enlacesTimeout: config.enlacesTimeout || 0, // ⭐ NUEVO
+            enlacesTimeout: config.enlacesTimeout || 0,
             
             antiSpam: config.spam || false,
             spamChannels: config.spamChannels || [],
-            spamTimeout: config.spamTimeout || 0, // ⭐ NUEVO
+            spamTimeout: config.spamTimeout || 0,
             
             antiInvites: config.invitaciones || false,
             invitacionesChannels: config.invitacionesChannels || [],
-            invitacionesTimeout: config.invitacionesTimeout || 0, // ⭐ NUEVO
+            invitacionesTimeout: config.invitacionesTimeout || 0,
             
             antiMentions: config.menciones || false,
             mencionesChannels: config.mencionesChannels || [],
-            mencionesTimeout: config.mencionesTimeout || 0, // ⭐ NUEVO
+            mencionesTimeout: config.mencionesTimeout || 0,
             
             mayusculas: config.mayusculas || false,
             mayusculasChannels: config.mayusculasChannels || [],
-            mayusculasTimeout: config.mayusculasTimeout || 0 // ⭐ NUEVO
+            mayusculasTimeout: config.mayusculasTimeout || 0
         } : {};
         
         res.json(dashboardFormat);
@@ -527,34 +393,32 @@ app.get("/api/:guildId/moderation", verifyToken, async (req, res) => {
     }
 });
 
-// POST - Guardar configuración de moderación
 app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
         const data = req.body;
         
-        // Convertir del dashboard a tu estructura
         const automodData = {
             guildId,
             enlaces: data.antiLinks || false,
             enlacesChannels: data.enlacesChannels || [],
-            enlacesTimeout: data.enlacesTimeout || 0, // ⭐ NUEVO
+            enlacesTimeout: data.enlacesTimeout || 0,
             
             spam: data.antiSpam || false,
             spamChannels: data.spamChannels || [],
-            spamTimeout: data.spamTimeout || 0, // ⭐ NUEVO
+            spamTimeout: data.spamTimeout || 0,
             
             invitaciones: data.antiInvites || false,
             invitacionesChannels: data.invitacionesChannels || [],
-            invitacionesTimeout: data.invitacionesTimeout || 0, // ⭐ NUEVO
+            invitacionesTimeout: data.invitacionesTimeout || 0,
             
             menciones: data.antiMentions || false,
             mencionesChannels: data.mencionesChannels || [],
-            mencionesTimeout: data.mencionesTimeout || 0, // ⭐ NUEVO
+            mencionesTimeout: data.mencionesTimeout || 0,
             
             mayusculas: data.mayusculas || false,
             mayusculasChannels: data.mayusculasChannels || [],
-            mayusculasTimeout: data.mayusculasTimeout || 0 // ⭐ NUEVO
+            mayusculasTimeout: data.mayusculasTimeout || 0
         };
         
         const config = await AutoMod.findOneAndUpdate(
@@ -565,7 +429,6 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
         
         console.log(`✅ Configuración de moderación guardada para ${guildId}`);
         
-        // Notificar en Discord
         const guild = client.guilds.cache.get(guildId);
         if (guild && data.logChannel) {
             const logChannel = guild.channels.cache.get(data.logChannel);
@@ -602,7 +465,6 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
             }
         }
         
-        // Emitir por socket
         io.emit("update-moderation", { guildId, config });
         
         res.json({ ok: true, saved: config });
@@ -616,8 +478,6 @@ app.post("/api/:guildId/moderation", verifyToken, async (req, res) => {
 ================   REPORTS CONFIG   =====================
 ======================================================= */
 
-// ✅ GET - Obtener configuración de reports (CON LOGS DE DEBUG)
-// En tu backend index.js, línea ~730 aprox
 app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
@@ -628,7 +488,7 @@ app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
                 channelId: "",
                 cooldown: 5,
                 dailyLimit: 10,
-                enabled: false // ⭐ Por defecto desactivado
+                enabled: false
             });
         }
 
@@ -636,7 +496,7 @@ app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
             channelId: config.channelId || config.reportChannelId || "",
             cooldown: config.cooldown || 5,
             dailyLimit: config.dailyLimit || 10,
-            enabled: config.enabled !== undefined ? config.enabled : true // ⭐
+            enabled: config.enabled !== undefined ? config.enabled : true
         };
         
         res.json(response);
@@ -646,15 +506,11 @@ app.get("/api/:guildId/reports", verifyToken, async (req, res) => {
     }
 });
 
-// ✅ POST - Guardar configuración de reports
 app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
         const { channelId, cooldown, dailyLimit, minRoleToReport, autoDeleteReport, enabled } = req.body;
 
-        console.log(`📥 POST /api/${guildId}/reports - Recibiendo configuración:`, req.body);
-
-        // ⭐ Validar que el canal existe
         if (!channelId) {
             return res.status(400).json({ 
                 error: "Debes seleccionar un canal",
@@ -662,29 +518,22 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
             });
         }
 
-        // ⭐ Validar que el guild existe
         const guild = client.guilds.cache.get(guildId);
         if (!guild) {
-            console.error(`❌ Guild ${guildId} no encontrado en caché`);
             return res.status(404).json({ 
                 error: "Servidor no encontrado",
                 details: "El bot no está en este servidor o no está listo"
             });
         }
 
-        // ⭐ Validar que el canal existe
         const channel = guild.channels.cache.get(channelId);
         if (!channel) {
-            console.error(`❌ Canal ${channelId} no encontrado en ${guild.name}`);
             return res.status(400).json({ 
                 error: "El canal seleccionado no existe",
                 details: `Canal ${channelId} no encontrado`
             });
         }
 
-        console.log(`✅ Canal validado: #${channel.name} en ${guild.name}`);
-
-        // ⭐ Actualizar AMBOS campos para compatibilidad
         const updateData = {
             guildId,
             channelId,
@@ -695,18 +544,13 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
             autoDeleteReport: autoDeleteReport !== undefined ? autoDeleteReport : true,
             enabled: enabled !== undefined ? enabled : true
         };
-        
-        console.log(`💾 Guardando en MongoDB:`, updateData);
 
         const config = await ReportConfig.findOneAndUpdate(
             { guildId },
             updateData,
             { new: true, upsert: true }
         );
-        
-        console.log(`✅ Configuración guardada en BD:`, config);
-        
-        // Notificar en Discord
+
         if (guild && config.channelId) {
             const notifyChannel = guild.channels.cache.get(config.channelId);
             if (notifyChannel) {
@@ -747,16 +591,12 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
                             timestamp: new Date()
                         }]
                     });
-                    console.log(`✅ Notificación enviada a #${notifyChannel.name}`);
                 } catch (err) {
                     console.error("❌ Error enviando embed:", err.message);
                 }
-            } else {
-                console.warn(`⚠️ No se pudo notificar: canal ${config.channelId} no encontrado`);
             }
         }
         
-        // ⭐ Devolver la misma estructura que el GET
         const response = {
             channelId: config.channelId,
             cooldown: config.cooldown,
@@ -766,8 +606,6 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
             enabled: config.enabled
         };
         
-        console.log(`✅ Enviando respuesta al frontend:`, response);
-        
         res.json({ 
             ok: true, 
             saved: response
@@ -776,21 +614,18 @@ app.post("/api/:guildId/reports", verifyToken, async (req, res) => {
         console.error("❌ Error guardando reports config:", err);
         res.status(500).json({ 
             error: "Error guardando configuración", 
-            details: err.message,
-            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+            details: err.message
         });
     }
 });
+
 /* =======================================================
 ================   REPORTS DATA   =======================
 ======================================================= */
 
-// Obtener estadísticas
 app.get("/api/:guildId/reports/stats", verifyToken, async (req, res) => {
     try {
         const { guildId } = req.params;
-        
-        console.log(`📊 Obteniendo stats para guild: ${guildId}`);
         
         const [total, pending, resolved, dismissed] = await Promise.all([
             Report.countDocuments({ guildId }),
@@ -799,8 +634,6 @@ app.get("/api/:guildId/reports/stats", verifyToken, async (req, res) => {
             Report.countDocuments({ guildId, status: 'dismissed' })
         ]);
         
-        console.log(`Stats: total=${total}, pending=${pending}, resolved=${resolved}, dismissed=${dismissed}`);
-        
         res.json({ total, pending, resolved, dismissed });
     } catch (err) {
         console.error("❌ Error obteniendo stats:", err);
@@ -808,13 +641,10 @@ app.get("/api/:guildId/reports/stats", verifyToken, async (req, res) => {
     }
 });
 
-// Obtener lista de reportes
 app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
     try {
         const { status, limit = 50 } = req.query;
         const { guildId } = req.params;
-        
-        console.log(`📋 Buscando reportes para guild: ${guildId}, status: ${status}`);
         
         const query = { guildId };
         
@@ -825,8 +655,6 @@ app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
         const reports = await Report.find(query)
             .sort({ timestamp: -1 })
             .limit(parseInt(limit));
-        
-        console.log(`📊 Reportes encontrados: ${reports.length}`);
         
         const mappedReports = reports.map(report => ({
             reportId: report.reportId,
@@ -849,13 +677,10 @@ app.get("/api/:guildId/reports/list", verifyToken, async (req, res) => {
     }
 });
 
-// Actualizar estado de reporte
 app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
     try {
         const { reportId, guildId } = req.params;
         const { status, resolution } = req.body;
-        
-        console.log(`📝 Actualizando reporte ${reportId} a estado: ${status}`);
         
         const report = await Report.findOneAndUpdate(
             { reportId },
@@ -869,13 +694,9 @@ app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
         );
         
         if (!report) {
-            console.error(`❌ Reporte ${reportId} no encontrado`);
             return res.status(404).json({ error: "Reporte no encontrado" });
         }
 
-        console.log(`✅ Reporte actualizado: ${reportId}`);
-
-        // Enviar notificación a Discord
         const guild = client.guilds.cache.get(guildId);
         
         if (guild) {
@@ -994,13 +815,8 @@ app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
                     }
 
                     await channel.send({ embeds: [embed] })
-                        .then(() => console.log(`✅ Embed enviado al canal ${reportConfig.channelId}`))
                         .catch(err => console.error("❌ Error enviando embed:", err));
-                } else {
-                    console.warn(`⚠️ Canal ${reportConfig.channelId} no encontrado`);
                 }
-            } else {
-                console.warn(`⚠️ No hay configuración de reportes para ${guildId}`);
             }
         }
         
@@ -1011,7 +827,6 @@ app.patch("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
     }
 });
 
-// Eliminar reporte
 app.delete("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
     try {
         const { reportId } = req.params;

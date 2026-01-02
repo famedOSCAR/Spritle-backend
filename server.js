@@ -849,5 +849,5 @@ app.delete("/api/:guildId/reports/:reportId", verifyToken, async (req, res) => {
 ================   START SERVER   ======================
 ======================================================= */
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 9055 ;
 server.listen(PORT, () => console.log(`🚀 Backend listo en puerto ${PORT}`));

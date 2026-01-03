@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose'
 
 const autoSanctionsSchema = new mongoose.Schema({
     guildId: {
@@ -33,4 +33,4 @@ const autoSanctionsSchema = new mongoose.Schema({
     timestamps: true
 });
 
-module.exports = mongoose.model('AutoSanctions', autoSanctionsSchema);
+export default mongoose.model('AutoSanctions', autoSanctionsSchema);

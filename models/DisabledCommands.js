@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const disabledCommandsSchema = new mongoose.Schema({
     guildId: {
@@ -20,4 +20,4 @@ const disabledCommandsSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-module.exports = mongoose.model('DisabledCommands', disabledCommandsSchema);
+export default mongoose.model('DisabledCommands', disabledCommandsSchema);

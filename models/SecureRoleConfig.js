@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const secureRoleConfigSchema = new mongoose.Schema({
     guildId: {
@@ -114,4 +114,4 @@ secureRoleConfigSchema.methods.hasActiveRole = function(roleId) {
     return this.createdSecureRoles.some(r => r.roleId === roleId && r.isActive);
 };
 
-module.exports = mongoose.model('SecureRoleConfig', secureRoleConfigSchema);
+export default mongoose.model('SecureRoleConfig', secureRoleConfigSchema);

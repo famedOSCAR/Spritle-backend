@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const logsConfigSchema = new mongoose.Schema({
     guildId: { 
@@ -23,4 +23,4 @@ const logsConfigSchema = new mongoose.Schema({
     }
 });
 
-module.exports = mongoose.model('LogsConfig', logsConfigSchema);
+export default mongoose.model('LogsConfig', logsConfigSchema);

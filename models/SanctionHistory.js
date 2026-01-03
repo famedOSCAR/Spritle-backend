@@ -1,4 +1,4 @@
-const { Schema, model } = require('mongoose');
+import { Schema, model } from 'mongoose';
 
 const sanctionHistorySchema = new Schema({
     guildId: {
@@ -41,4 +41,4 @@ const sanctionHistorySchema = new Schema({
 
 sanctionHistorySchema.index({ guildId: 1, userId: 1, executedAt: -1 });
 
-module.exports = model('SanctionHistory', sanctionHistorySchema);
+export default model('SanctionHistory', sanctionHistorySchema);

@@ -53,25 +53,6 @@ app.use(cors({
 app.use(express.json());
 
 /* =======================================================
-================   MIDDLEWARE JWT   =====================
-======================================================= */
-
-function verifyToken(req, res, next) {
-    const header = req.headers.authorization;
-    if (!header) return res.status(401).json({ error: "No token provided" });
-
-    const token = header.split(" ")[1];
-
-    try {
-        req.user = jwt.verify(token, process.env.JWT_SECRET);
-        next();
-    } catch (err) {
-        console.error("JWT error:", err);
-        res.status(403).json({ error: "Invalid token" });
-    }
-}
-app.use('/api', verifyToken, configRoutes);
-/* =======================================================
 ================   BOT STATS (SOCKET.IO)   ==============
 ======================================================= */
 
@@ -91,6 +72,27 @@ io.on("connection", (socket) => {
     console.log("🟢 WebSocket conectado");
     socket.emit("bot-stats", botStats);
 });
+
+/* =======================================================
+================   MIDDLEWARE JWT   =====================
+======================================================= */
+
+function verifyToken(req, res, next) {
+    const header = req.headers.authorization;
+    if (!header) return res.status(401).json({ error: "No token provided" });
+
+    const token = header.split(" ")[1];
+
+    try {
+        req.user = jwt.verify(token, process.env.JWT_SECRET);
+        next();
+    } catch (err) {
+        console.error("JWT error:", err);
+        res.status(403).json({ error: "Invalid token" });
+    }
+}
+app.use('/api', verifyToken, configRoutes);
+
 
 /* =======================================================
 ================   DISCORD BOT CLIENT   =================

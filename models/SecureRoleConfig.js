@@ -34,7 +34,6 @@ const secureRoleConfigSchema = new mongoose.Schema({
         max: 365
     },
     
-    // 🆕 TRACKING DE ROLES CREADOS
     createdSecureRoles: [{
         roleId: String,
         roleName: String,
@@ -43,7 +42,6 @@ const secureRoleConfigSchema = new mongoose.Schema({
         isActive: { type: Boolean, default: true }
     }],
     
-    // Metadata
     createdAt: {
         type: Date,
         default: Date.now
@@ -58,13 +56,11 @@ const secureRoleConfigSchema = new mongoose.Schema({
     }
 });
 
-// Actualizar updatedAt automáticamente
 secureRoleConfigSchema.pre('save', function(next) {
     this.updatedAt = Date.now();
     next();
 });
 
-// Método estático para obtener o crear configuración
 secureRoleConfigSchema.statics.getOrCreate = async function(guildId) {
     let config = await this.findOne({ guildId });
     
@@ -83,8 +79,7 @@ secureRoleConfigSchema.statics.getOrCreate = async function(guildId) {
     return config;
 };
 
-// 🆕 Método para agregar rol creado
-secureRoleConfigSchema.methods.addCreatedRole = function(roleId, roleName, createdBy) {
+secureRoleConfigSchema.methods.addCreatedRole = async function(roleId, roleName, createdBy) {
     this.createdSecureRoles.push({
         roleId,
         roleName,
@@ -92,24 +87,23 @@ secureRoleConfigSchema.methods.addCreatedRole = function(roleId, roleName, creat
         createdBy,
         isActive: true
     });
-    return this.save();
+    await this.save();
+    return this;
 };
 
-// 🆕 Método para marcar rol como eliminado
-secureRoleConfigSchema.methods.markRoleAsDeleted = function(roleId) {
+secureRoleConfigSchema.methods.markRoleAsDeleted = async function(roleId) {
     const role = this.createdSecureRoles.find(r => r.roleId === roleId);
     if (role) {
         role.isActive = false;
     }
-    return this.save();
+    await this.save();
+    return this;
 };
 
-// 🆕 Método para obtener roles activos
 secureRoleConfigSchema.methods.getActiveRoles = function() {
     return this.createdSecureRoles.filter(r => r.isActive);
 };
 
-// 🆕 Método para verificar si un rol existe y está activo
 secureRoleConfigSchema.methods.hasActiveRole = function(roleId) {
     return this.createdSecureRoles.some(r => r.roleId === roleId && r.isActive);
 };

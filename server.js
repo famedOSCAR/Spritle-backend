@@ -74,6 +74,17 @@ io.on("connection", (socket) => {
 });
 
 /* =======================================================
+================   DISCORD BOT CLIENT   =================
+======================================================= */
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages
+    ]
+});
+/* =======================================================
 ================   MIDDLEWARE JWT   =====================
 ======================================================= */
 
@@ -91,20 +102,13 @@ function verifyToken(req, res, next) {
         res.status(403).json({ error: "Invalid token" });
     }
 }
-app.use('/api', verifyToken, configRoutes);
+app.use('/api', verifyToken, (req, res, next) => {
+    req.discordClient = client;
+    next();
+}, configRoutes);
 
 
-/* =======================================================
-================   DISCORD BOT CLIENT   =================
-======================================================= */
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages
-    ]
-});
 
 client.on("ready", () => {
     console.log(`Bot listo: ${client.user.tag}`);

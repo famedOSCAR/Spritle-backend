@@ -13,6 +13,7 @@ import GuildGrowth from "./models/GuildGrowth.js";
 import AutoMod from "./models/automod.js";
 import Report from "./models/Report.js";
 import ReportConfig from "./models/ReportsConfig.js";
+import configRoutes from './routes/configRoutes.js';
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("✅ MongoDB conectado"))
@@ -69,7 +70,7 @@ function verifyToken(req, res, next) {
         res.status(403).json({ error: "Invalid token" });
     }
 }
-
+app.use('/api', verifyToken, configRoutes);
 /* =======================================================
 ================   BOT STATS (SOCKET.IO)   ==============
 ======================================================= */
@@ -224,7 +225,7 @@ app.get("/auth/callback", async (req, res) => {
             { expiresIn: "7d" }
         );
 
-        res.redirect(`https://spritlebot.netlify.app/auth/callback?token=${jwtToken}`);
+        res.redirect(`http://localhost:5173/auth/callback?token=${jwtToken}`);
     } catch (err) {
         console.error("OAuth error:", err?.response?.data || err);
         res.status(500).send("Error en OAuth");

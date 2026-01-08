@@ -31,7 +31,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
         origin: [
-            "https://spritlebot.netlify.app",
+            "https://spritleweb.netlify.app",
             "http://localhost:5173",
             "https://spritle-backend-iqn3.onrender.com"
         ],
@@ -42,7 +42,7 @@ const io = new Server(server, {
 
 app.use(cors({
     origin: [
-        "https://spritlebot.netlify.app",
+        "https://spritleweb.netlify.app",
         "http://localhost:5173",
         "https://spritle-backend-iqn3.onrender.com"
     ],
@@ -234,7 +234,7 @@ app.get("/auth/callback", async (req, res) => {
             { expiresIn: "7d" }
         );
 
-        res.redirect(`http://localhost:5173/auth/callback?token=${jwtToken}`);
+        res.redirect(`https://spritleweb.netlify.app/auth/callback?token=${jwtToken}`);
     } catch (err) {
         console.error("OAuth error:", err?.response?.data || err);
         res.status(500).send("Error en OAuth");

@@ -103,12 +103,12 @@ function verifyToken(req, res, next) {
         res.status(403).json({ error: "Invalid token" });
     }
 }
+app.use('/api/verify', verifyRoutes);
 app.use('/api', verifyToken, (req, res, next) => {
     req.discordClient = client;
     next();
 }, configRoutes);
 
-app.use('/api/verify', verifyRoutes);
 
 
 

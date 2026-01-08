@@ -17,9 +17,9 @@ router.post('/validate-token', async (req, res) => {
         const { token } = req.body;
 
         if (!token) {
-            return res.status(400).json({ 
-                valid: false, 
-                message: 'Token no proporcionado' 
+            return res.status(400).json({
+                valid: false,
+                message: 'Token no proporcionado'
             });
         }
 
@@ -28,9 +28,9 @@ router.post('/validate-token', async (req, res) => {
         try {
             decoded = jwt.verify(token, process.env.JWT_SECRET);
         } catch (error) {
-            return res.status(400).json({ 
-                valid: false, 
-                message: 'Token inválido o expirado' 
+            return res.status(400).json({
+                valid: false,
+                message: 'Token inválido o expirado'
             });
         }
 
@@ -38,9 +38,9 @@ router.post('/validate-token', async (req, res) => {
         const session = await VerifySession.findById(decoded.sessionId);
 
         if (!session) {
-            return res.status(404).json({ 
-                valid: false, 
-                message: 'Sesión no encontrada' 
+            return res.status(404).json({
+                valid: false,
+                message: 'Sesión no encontrada'
             });
         }
 
@@ -48,17 +48,17 @@ router.post('/validate-token', async (req, res) => {
         if (session.expiresAt < new Date()) {
             session.status = 'expired';
             await session.save();
-            return res.status(400).json({ 
-                valid: false, 
-                message: 'Sesión expirada. Solicita un nuevo enlace de verificación.' 
+            return res.status(400).json({
+                valid: false,
+                message: 'Sesión expirada. Solicita un nuevo enlace de verificación.'
             });
         }
 
         // Verificar si ya fue completada
         if (session.status === 'completed') {
-            return res.status(400).json({ 
-                valid: false, 
-                message: 'Esta sesión ya fue completada' 
+            return res.status(400).json({
+                valid: false,
+                message: 'Esta sesión ya fue completada'
             });
         }
 
@@ -74,9 +74,9 @@ router.post('/validate-token', async (req, res) => {
 
     } catch (error) {
         console.error('Error validando token:', error);
-        res.status(500).json({ 
-            valid: false, 
-            message: 'Error del servidor al validar token' 
+        res.status(500).json({
+            valid: false,
+            message: 'Error del servidor al validar token'
         });
     }
 });
@@ -87,9 +87,9 @@ router.post('/discord-callback', async (req, res) => {
         const { code, verifyToken } = req.body;
 
         if (!code || !verifyToken) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Código o token faltante' 
+            return res.status(400).json({
+                success: false,
+                message: 'Código o token faltante'
             });
         }
 
@@ -122,16 +122,16 @@ router.post('/discord-callback', async (req, res) => {
         try {
             decoded = jwt.verify(verifyToken, process.env.JWT_SECRET);
         } catch (error) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Token de verificación inválido' 
+            return res.status(400).json({
+                success: false,
+                message: 'Token de verificación inválido'
             });
         }
 
         if (discordUser.id !== decoded.userId) {
-            return res.status(403).json({ 
-                success: false, 
-                message: 'El usuario de Discord no coincide con la sesión de verificación' 
+            return res.status(403).json({
+                success: false,
+                message: 'El usuario de Discord no coincide con la sesión de verificación'
             });
         }
 
@@ -145,15 +145,15 @@ router.post('/discord-callback', async (req, res) => {
             );
 
             if (!memberResponse.data) {
-                return res.status(403).json({ 
-                    success: false, 
-                    message: 'Ya no eres miembro de este servidor' 
+                return res.status(403).json({
+                    success: false,
+                    message: 'Ya no eres miembro de este servidor'
                 });
             }
         } catch (error) {
-            return res.status(403).json({ 
-                success: false, 
-                message: 'No tienes acceso a este servidor' 
+            return res.status(403).json({
+                success: false,
+                message: 'No tienes acceso a este servidor'
             });
         }
 
@@ -164,9 +164,9 @@ router.post('/discord-callback', async (req, res) => {
 
     } catch (error) {
         console.error('Error en callback de Discord:', error.response?.data || error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Error al autenticar con Discord' 
+        res.status(500).json({
+            success: false,
+            message: 'Error al autenticar con Discord'
         });
     }
 });
@@ -177,12 +177,14 @@ router.post('/complete', async (req, res) => {
         const { token, captchaToken, discordToken } = req.body;
 
         if (!token || !captchaToken || !discordToken) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Datos incompletos' 
+            return res.status(400).json({
+                success: false,
+                message: 'Datos incompletos'
             });
         }
 
+        console.log('🔍 Verificando reCAPTCHA...'); // ← AGREGAR
+        console.log('🔍 Token recibido:', captchaToken?.substring(0, 50) + '...');
         // 1. Verificar reCAPTCHA
         const captchaResponse = await axios.post(
             'https://www.google.com/recaptcha/api/siteverify',
@@ -192,21 +194,27 @@ router.post('/complete', async (req, res) => {
             })
         );
 
+        console.log('✅ Respuesta de Google:', captchaResponse.data); // ← AGREGAR
+
         if (!captchaResponse.data.success) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Verificación de reCAPTCHA fallida' 
+            console.log('❌ reCAPTCHA falló:', captchaResponse.data); // ← AGREGAR
+            return res.status(400).json({
+                success: false,
+                message: 'Verificación de reCAPTCHA fallida',
+                details: captchaResponse.data['error-codes'] // ← AGREGAR esto también
             });
         }
+
+        console.log('✅ reCAPTCHA verificado correctamente'); // ← AGREGAR
 
         // 2. Decodificar token JWT
         let decoded;
         try {
             decoded = jwt.verify(token, process.env.JWT_SECRET);
         } catch (error) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Token inválido' 
+            return res.status(400).json({
+                success: false,
+                message: 'Token inválido'
             });
         }
 
@@ -214,9 +222,9 @@ router.post('/complete', async (req, res) => {
         const session = await VerifySession.findById(decoded.sessionId);
 
         if (!session || session.status !== 'pending') {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Sesión inválida o ya completada' 
+            return res.status(400).json({
+                success: false,
+                message: 'Sesión inválida o ya completada'
             });
         }
 
@@ -224,42 +232,42 @@ router.post('/complete', async (req, res) => {
         if (session.expiresAt < new Date()) {
             session.status = 'expired';
             await session.save();
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Sesión expirada' 
+            return res.status(400).json({
+                success: false,
+                message: 'Sesión expirada'
             });
         }
 
         // 5. Obtener configuración de verificación del servidor
-        const config = await VerifyConfig.findOne({ 
+        const config = await VerifyConfig.findOne({
             guildId: session.guildId,
-            enabled: true 
+            enabled: true
         });
 
         if (!config || !config.roleId) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Sistema de verificación no configurado' 
+            return res.status(400).json({
+                success: false,
+                message: 'Sistema de verificación no configurado'
             });
         }
 
         // 6. Asignar rol usando el bot
         try {
             const guild = global.client.guilds.cache.get(session.guildId);
-            
+
             if (!guild) {
-                return res.status(404).json({ 
-                    success: false, 
-                    message: 'Servidor no encontrado' 
+                return res.status(404).json({
+                    success: false,
+                    message: 'Servidor no encontrado'
                 });
             }
 
             const member = await guild.members.fetch(session.userId);
-            
+
             if (!member) {
-                return res.status(404).json({ 
-                    success: false, 
-                    message: 'Usuario no encontrado en el servidor' 
+                return res.status(404).json({
+                    success: false,
+                    message: 'Usuario no encontrado en el servidor'
                 });
             }
 
@@ -294,18 +302,18 @@ router.post('/complete', async (req, res) => {
 
         } catch (error) {
             console.error('Error asignando rol:', error);
-            return res.status(500).json({ 
-                success: false, 
+            return res.status(500).json({
+                success: false,
                 message: 'Error al asignar el rol de verificación',
-                details: error.message 
+                details: error.message
             });
         }
 
     } catch (error) {
         console.error('Error completando verificación:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Error del servidor al completar verificación' 
+        res.status(500).json({
+            success: false,
+            message: 'Error del servidor al completar verificación'
         });
     }
 });

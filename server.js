@@ -14,6 +14,7 @@ import AutoMod from "./models/automod.js";
 import Report from "./models/Report.js";
 import ReportConfig from "./models/ReportsConfig.js";
 import configRoutes from './routes/configRoutes.js';
+import verifyRoutes from './routes/verifyRoutes.js';
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("✅ MongoDB conectado"))
@@ -107,6 +108,7 @@ app.use('/api', verifyToken, (req, res, next) => {
     next();
 }, configRoutes);
 
+app.use('/api/verify', verifyRoutes);
 
 
 
@@ -148,6 +150,7 @@ client.on("guildMemberAdd", async (member) => {
 });
 
 client.login(BOT_TOKEN);
+global.client = client;
 
 function updateBotStats() {
     if (!client.isReady()) {

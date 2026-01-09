@@ -39,6 +39,10 @@ const verifySessionSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    dmMessageId: {
+        type: String,
+        required: false
+    },
     lastAttempt: {
         type: Date,
         default: null

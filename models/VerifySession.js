@@ -16,6 +16,12 @@ const verifySessionSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
+    urlSlug: { // ✅ Bien posicionado
+        type: String,
+        required: true,
+        unique: true,
+        index: true
+    },
     status: {
         type: String,
         enum: ['pending', 'completed', 'expired', 'failed'],
@@ -51,9 +57,9 @@ const verifySessionSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// Index compuesto para búsquedas rápidas
+// ✅ Índices compuestos optimizados
 verifySessionSchema.index({ guildId: 1, userId: 1, status: 1 });
-
+verifySessionSchema.index({ urlSlug: 1, status: 1 }); // ← AGREGADO
 verifySessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 3600 });
 
 export default mongoose.model('VerifySession', verifySessionSchema);

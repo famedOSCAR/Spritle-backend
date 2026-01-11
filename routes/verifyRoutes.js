@@ -1,6 +1,6 @@
+// routes/verifyRoutes.js
 import express from 'express';
 import axios from 'axios';
-import jwt from 'jsonwebtoken';
 import VerifySession from '../models/VerifySession.js';
 import VerifyConfig from '../models/VerifyConfig.js';
 
@@ -11,85 +11,61 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = `${process.env.FRONTEND_URL}/verify/callback`;
 
-// ========== ENDPOINT 1: Validar token JWT ==========
-router.post('/validate-token', async (req, res) => {
+// ✅ ENDPOINT 1: Validar URL Slug
+router.post('/validate-slug', async (req, res) => {
     try {
-        const { token } = req.body;
+        const { urlSlug } = req.body;
 
-        if (!token) {
-            return res.status(400).json({
-                valid: false,
-                message: 'Token no proporcionado'
+        if (!urlSlug || !urlSlug.includes('-')) {
+            return res.json({ 
+                valid: false, 
+                message: 'Enlace de verificación inválido' 
             });
         }
 
-        // Verificar JWT
-        let decoded;
-        try {
-            decoded = jwt.verify(token, process.env.JWT_SECRET);
-        } catch (error) {
-            return res.status(400).json({
-                valid: false,
-                message: 'Token inválido o expirado'
-            });
-        }
-
-        // Buscar sesión en la base de datos
-        const session = await VerifySession.findById(decoded.sessionId);
+        // Buscar sesión por slug
+        const session = await VerifySession.findOne({
+            urlSlug: urlSlug,
+            status: 'pending',
+            expiresAt: { $gt: new Date() }
+        });
 
         if (!session) {
-            return res.status(404).json({
-                valid: false,
-                message: 'Sesión no encontrada'
+            return res.json({ 
+                valid: false, 
+                message: 'Enlace expirado o ya utilizado' 
             });
         }
 
-        // Verificar si la sesión expiró
-        if (session.expiresAt < new Date()) {
-            session.status = 'expired';
-            await session.save();
-            return res.status(400).json({
-                valid: false,
-                message: 'Sesión expirada. Solicita un nuevo enlace de verificación.'
-            });
-        }
-
-        // Verificar si ya fue completada
-        if (session.status === 'completed') {
-            return res.status(400).json({
-                valid: false,
-                message: 'Esta sesión ya fue completada'
-            });
-        }
-
-        // Todo OK, devolver info de la sesión
+        // Obtener información del servidor
+        const config = await VerifyConfig.findOne({ guildId: session.guildId });
+        
         res.json({
             valid: true,
             session: {
-                userId: session.userId,
                 guildId: session.guildId,
-                guildName: decoded.guildName || 'Servidor Discord'
+                guildName: config?.guildName || 'Servidor de Discord',
+                userId: session.userId
             }
         });
-
     } catch (error) {
-        console.error('Error validando token:', error);
-        res.status(500).json({
-            valid: false,
-            message: 'Error del servidor al validar token'
+        console.error('❌ Error validando slug:', error);
+        res.status(500).json({ 
+            valid: false, 
+            message: 'Error del servidor' 
         });
     }
 });
 
-// ========== ENDPOINT 2: Callback de Discord OAuth ==========
+// ✅ ENDPOINT 2: Callback de Discord OAuth
 router.post('/discord-callback', async (req, res) => {
     try {
-        const { code, verifyToken } = req.body;
+        const { code, urlSlug } = req.body;
 
-        if (!code || !verifyToken) {
+        if (!code || !urlSlug) {
             return res.status(400).json({
                 success: false,
-                message: 'Código o token faltante'
+                message: 'Código o slug faltante'
             });
         }
 
@@ -110,60 +86,64 @@ router.post('/discord-callback', async (req, res) => {
 
         const { access_token } = tokenResponse.data;
 
-        // Obtener info del usuario
+        // Obtener info del usuario de Discord
         const userResponse = await axios.get(`${DISCORD_API}/users/@me`, {
             headers: { Authorization: `Bearer ${access_token}` }
         });
 
         const discordUser = userResponse.data;
 
-        // Verificar que el usuario coincida con la sesión
-        let decoded;
-        try {
-            decoded = jwt.verify(verifyToken, process.env.JWT_SECRET);
-        } catch (error) {
+        // ✅ VALIDACIÓN CRÍTICA: Verificar que el User ID coincida
+        const session = await VerifySession.findOne({
+            urlSlug: urlSlug,
+            status: 'pending',
+            expiresAt: { $gt: new Date() }
+        });
+
+        if (!session) {
             return res.status(400).json({
                 success: false,
-                message: 'Token de verificación inválido'
+                message: 'Sesión inválida o expirada'
             });
         }
 
-        if (discordUser.id !== decoded.userId) {
+        if (discordUser.id !== session.userId) {
+            console.log(`❌ User ID no coincide: OAuth=${discordUser.id} vs Session=${session.userId}`);
             return res.status(403).json({
                 success: false,
-                message: 'El usuario de Discord no coincide con la sesión de verificación'
+                message: 'Este enlace no es para tu cuenta de Discord'
             });
         }
+
+        console.log(`✅ User ID verificado: ${discordUser.username} (${discordUser.id})`);
 
         // Verificar que el usuario siga en el servidor
         try {
-            const memberResponse = await axios.get(
-                `${DISCORD_API}/users/@me/guilds/${decoded.guildId}/member`,
-                {
-                    headers: { Authorization: `Bearer ${access_token}` }
+            const client = global.client;
+            if (client) {
+                const guild = client.guilds.cache.get(session.guildId);
+                if (guild) {
+                    const member = await guild.members.fetch(session.userId).catch(() => null);
+                    if (!member) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'Ya no eres miembro de este servidor'
+                        });
+                    }
                 }
-            );
-
-            if (!memberResponse.data) {
-                return res.status(403).json({
-                    success: false,
-                    message: 'Ya no eres miembro de este servidor'
-                });
             }
         } catch (error) {
-            return res.status(403).json({
-                success: false,
-                message: 'No tienes acceso a este servidor'
-            });
+            console.error('Error verificando membresía:', error);
         }
 
         res.json({
             success: true,
-            discordToken: access_token
+            discordToken: access_token,
+            verified: true
         });
 
     } catch (error) {
-        console.error('Error en callback de Discord:', error.response?.data || error);
+        console.error('❌ Error en callback de Discord:', error.response?.data || error);
         res.status(500).json({
             success: false,
             message: 'Error al autenticar con Discord'
@@ -171,74 +151,68 @@ router.post('/discord-callback', async (req, res) => {
     }
 });
 
-// ========== ENDPOINT 3: Completar verificación ==========
+// ✅ ENDPOINT 3: Completar Verificación
 router.post('/complete', async (req, res) => {
     try {
-        const { token, captchaToken, discordToken } = req.body;
+        const { urlSlug, captchaToken, discordToken } = req.body;
 
-        if (!token || !captchaToken || !discordToken) {
+        if (!urlSlug || !captchaToken || !discordToken) {
             return res.status(400).json({
                 success: false,
                 message: 'Datos incompletos'
             });
         }
 
-        console.log('🔍 Verificando reCAPTCHA...'); // ← AGREGAR
-        console.log('🔍 Token recibido:', captchaToken?.substring(0, 50) + '...');
-        // 1. Verificar reCAPTCHA
+        console.log('🔍 Verificando reCAPTCHA...');
+
+        // 1. Verificar reCAPTCHA v3
         const captchaResponse = await axios.post(
             'https://www.google.com/recaptcha/api/siteverify',
             new URLSearchParams({
                 secret: process.env.RECAPTCHA_SECRET_KEY,
                 response: captchaToken
-            })
+            }),
+            {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            }
         );
 
-        console.log('✅ Respuesta de Google:', captchaResponse.data); // ← AGREGAR
+        console.log('✅ Respuesta de Google:', captchaResponse.data);
 
         if (!captchaResponse.data.success) {
-            console.log('❌ reCAPTCHA falló:', captchaResponse.data); // ← AGREGAR
+            console.log('❌ reCAPTCHA falló:', captchaResponse.data);
             return res.status(400).json({
                 success: false,
                 message: 'Verificación de reCAPTCHA fallida',
-                details: captchaResponse.data['error-codes'] // ← AGREGAR esto también
+                details: captchaResponse.data['error-codes']
             });
         }
 
-        console.log('✅ reCAPTCHA verificado correctamente'); // ← AGREGAR
-
-        // 2. Decodificar token JWT
-        let decoded;
-        try {
-            decoded = jwt.verify(token, process.env.JWT_SECRET);
-        } catch (error) {
+        if (captchaResponse.data.score < 0.5) {
+            console.log(`⚠️ reCAPTCHA score bajo: ${captchaResponse.data.score}`);
             return res.status(400).json({
                 success: false,
-                message: 'Token inválido'
+                message: 'Sospecha de actividad automatizada'
             });
         }
 
-        // 3. Obtener sesión
-        const session = await VerifySession.findById(decoded.sessionId);
+        console.log(`✅ reCAPTCHA aprobado - Score: ${captchaResponse.data.score}`);
 
-        if (!session || session.status !== 'pending') {
+        // 2. Buscar sesión activa
+        const session = await VerifySession.findOne({
+            urlSlug: urlSlug,
+            status: 'pending',
+            expiresAt: { $gt: new Date() }
+        });
+
+        if (!session) {
             return res.status(400).json({
                 success: false,
-                message: 'Sesión inválida o ya completada'
+                message: 'Enlace expirado o ya utilizado'
             });
         }
 
-        // 4. Verificar que no haya expirado
-        if (session.expiresAt < new Date()) {
-            session.status = 'expired';
-            await session.save();
-            return res.status(400).json({
-                success: false,
-                message: 'Sesión expirada'
-            });
-        }
-
-        // 5. Obtener configuración de verificación del servidor
+        // 3. Obtener configuración del servidor
         const config = await VerifyConfig.findOne({
             guildId: session.guildId,
             enabled: true
@@ -251,9 +225,19 @@ router.post('/complete', async (req, res) => {
             });
         }
 
-        // 6. Asignar rol usando el bot
+        // 4. Asignar rol usando el bot
         try {
-            const guild = global.client.guilds.cache.get(session.guildId);
+            const client = global.client;
+
+            if (!client) {
+                console.error('❌ Cliente de Discord no disponible');
+                return res.status(500).json({
+                    success: false,
+                    message: 'Bot no disponible temporalmente'
+                });
+            }
+
+            const guild = client.guilds.cache.get(session.guildId);
 
             if (!guild) {
                 return res.status(404).json({
@@ -262,7 +246,7 @@ router.post('/complete', async (req, res) => {
                 });
             }
 
-            const member = await guild.members.fetch(session.userId);
+            const member = await guild.members.fetch(session.userId).catch(() => null);
 
             if (!member) {
                 return res.status(404).json({
@@ -275,6 +259,7 @@ router.post('/complete', async (req, res) => {
             if (member.roles.cache.has(config.roleId)) {
                 session.status = 'completed';
                 session.completedAt = new Date();
+                session.ipAddress = req.ip || req.headers['x-forwarded-for'] || 'unknown';
                 await session.save();
 
                 return res.json({
@@ -290,9 +275,9 @@ router.post('/complete', async (req, res) => {
             session.status = 'completed';
             session.completedAt = new Date();
             session.ipAddress = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+            session.attempts += 1;
             await session.save();
 
-            // Log en el servidor
             console.log(`✅ Usuario verificado: ${member.user.tag} (${member.id}) en ${guild.name}`);
 
             res.json({
@@ -301,19 +286,19 @@ router.post('/complete', async (req, res) => {
             });
 
         } catch (error) {
-            console.error('Error asignando rol:', error);
+            console.error('❌ Error asignando rol:', error);
             return res.status(500).json({
                 success: false,
-                message: 'Error al asignar el rol de verificación',
+                message: 'Error al asignar el rol',
                 details: error.message
             });
         }
 
     } catch (error) {
-        console.error('Error completando verificación:', error);
+        console.error('❌ Error completando verificación:', error);
         res.status(500).json({
             success: false,
-            message: 'Error del servidor al completar verificación'
+            message: 'Error del servidor'
         });
     }
 });

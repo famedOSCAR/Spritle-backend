@@ -37,15 +37,38 @@ router.post('/validate-slug', async (req, res) => {
             });
         }
 
-        // Obtener información del servidor
+        // Obtener información del servidor y usuario desde Discord
+        let guildName = 'Servidor de Discord';
+        let userAvatar = null;
+
+        try {
+            const client = global.client;
+            if (client) {
+                const guild = client.guilds.cache.get(session.guildId);
+                if (guild) {
+                    guildName = guild.name;
+                    
+                    // Obtener el miembro para tener su avatar
+                    const member = await guild.members.fetch(session.userId).catch(() => null);
+                    if (member && member.user.avatar) {
+                        userAvatar = member.user.avatar;
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error obteniendo info del guild:', error);
+        }
+
+        // Obtener configuración del servidor (por si acaso tiene más info)
         const config = await VerifyConfig.findOne({ guildId: session.guildId });
         
         res.json({
             valid: true,
             session: {
                 guildId: session.guildId,
-                guildName: config?.guildName || 'Servidor de Discord',
-                userId: session.userId
+                guildName: guildName,
+                userId: session.userId,
+                avatar: userAvatar
             }
         });
     } catch (error) {

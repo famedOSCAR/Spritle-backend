@@ -267,6 +267,21 @@ app.get("/api/user", verifyToken, async (req, res) => {
             return botInGuild && userHasAdmin;
         });
 
+        const enrichedGuilds = mutualGuilds.map(guild => {
+            const botGuild = client.guilds.cache.get(guild.id);
+            return {
+                ...guild,
+                // Añadir memberCount desde el bot
+                approximate_member_count: botGuild ? botGuild.memberCount : guild.approximate_member_count,
+                memberCount: botGuild ? botGuild.memberCount : null
+            };
+        });
+
+        const enrichedUser = {
+            ...user,
+            discriminator: user.discriminator || '0'
+        };
+
         res.json({ user, servers: mutualGuilds });
     } catch (err) {
         console.error("Error al obtener datos de Discord:", err.response?.data || err);

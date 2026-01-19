@@ -65,12 +65,20 @@ app.get("/api/stats", (req, res) => {
 
 app.post("/update-stats", (req, res) => {
     botStats = req.body;
+    
+    const botStatus = {
+        online: req.body.online || false,
+        lastUpdate: new Date(),
+        readySince: botStats.readySince || new Date()
+    };
+    
     io.emit("bot-stats", botStats);
+    io.emit("bot-status", botStatus);
+    
     res.sendStatus(200);
 });
 
 io.on("connection", (socket) => {
-    console.log("🟢 WebSocket conectado");
     socket.emit("bot-stats", botStats);
 });
 

@@ -37,6 +37,10 @@ router.post('/:guildId/auto-sanctions', async (req, res) => {
             { guildId, enabled, rules },
             { upsert: true, new: true }
         );
+        
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-auto-sanctions', { guildId, config });
+        
         res.json({ ok: true, config });
     } catch (err) {
         console.error('Error guardando auto-sanctions:', err);
@@ -93,6 +97,10 @@ router.post('/:guildId/logs', async (req, res) => {
             { guildId, logChannelId, cmdDetectorEnabled: cmdDetectorEnabled || false, updatedAt: Date.now(), updatedBy: req.user?.id },
             { upsert: true, new: true }
         );
+        
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-logs', { guildId, config });
+        
         res.json({ ok: true, config });
     } catch (err) {
         console.error('Error guardando logs config:', err);
@@ -104,6 +112,10 @@ router.delete('/:guildId/logs', async (req, res) => {
     try {
         const { guildId } = req.params;
         await LogsConfig.deleteOne({ guildId });
+        
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-logs', { guildId, config: { logChannelId: null, cmdDetectorEnabled: false } });
+        
         res.json({ ok: true, message: 'Configuración eliminada' });
     } catch (err) {
         console.error('Error eliminando logs config:', err);
@@ -150,6 +162,10 @@ router.post('/:guildId/disabled-commands', async (req, res) => {
             });
             await config.save();
         }
+        
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-disabled-commands', { guildId, commands: config.disabledCommands });
+        
         res.json({ ok: true, config });
     } catch (err) {
         console.error('Error desactivando comando:', err);
@@ -167,6 +183,10 @@ router.delete('/:guildId/disabled-commands/:command', async (req, res) => {
         config.disabledCommands = config.disabledCommands.filter(cmd => cmd !== command);
         config.disabledBy.delete(command);
         await config.save();
+        
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-disabled-commands', { guildId, commands: config.disabledCommands });
+        
         res.json({ ok: true, config });
     } catch (err) {
         console.error('Error activando comando:', err);
@@ -204,13 +224,16 @@ router.post('/:guildId/language', async (req, res) => {
             { guildId, lang },
             { upsert: true, new: true }
         );
+        
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-language', { guildId, lang: guild.lang });
+        
         res.json({ ok: true, lang: guild.lang });
     } catch (err) {
         console.error('Error cambiando idioma:', err);
         res.status(500).json({ error: 'Error cambiando idioma' });
     }
 });
-
 // ====================================================================
 // SECURE ROLE ROUTES
 // ====================================================================
@@ -321,6 +344,9 @@ router.post('/:guildId/secure-role/create', async (req, res) => {
         
         await config.save();
         
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-secure-role', { guildId, config });
+        
         res.json({ ok: true, config });
     } catch (err) {
         console.error('Error creando secure role:', err);
@@ -355,6 +381,9 @@ router.post('/:guildId/secure-role/rename', async (req, res) => {
                 await config.save();
             }
         }
+        
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-secure-role', { guildId, config });
         
         res.json({ ok: true, config });
     } catch (err) {
@@ -541,6 +570,9 @@ router.post('/:guildId/secure-role/verify', async (req, res) => {
             await config.save();
         }
         
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-secure-role', { guildId, config });
+        
         res.json({ ok: true, cleaned, config });
     } catch (err) {
         console.error('Error verificando roles:', err);
@@ -561,6 +593,9 @@ router.post('/:guildId/secure-role/auto-new', async (req, res) => {
         config.autoNew = enabled;
         config.autoNewRole = enabled ? roleId : null;
         await config.save();
+        
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-secure-role', { guildId, config });
         
         res.json({ ok: true, config });
     } catch (err) {
@@ -583,6 +618,9 @@ router.post('/:guildId/secure-role/auto-new-accounts', async (req, res) => {
         config.autoNewAccountsRole = enabled ? roleId : null;
         config.autoNewAccountsDays = days || 7;
         await config.save();
+        
+        // ✅ EMIT SOCKET.IO
+        req.io.emit('update-secure-role', { guildId, config });
         
         res.json({ ok: true, config });
     } catch (err) {

@@ -94,6 +94,8 @@ const client = new Client({
     ]
 });
 global.client = client;
+global.io = io;
+
 /* =======================================================
 ================   MIDDLEWARE JWT   =====================
 ======================================================= */
@@ -116,11 +118,9 @@ function verifyToken(req, res, next) {
 app.use('/api/verify', verifyRoutes);
 app.use('/api', verifyToken, (req, res, next) => {
     req.discordClient = client;
+    req.io = io;
     next();
 }, configRoutes);
-
-
-
 
 client.on("ready", () => {
     console.log(`Bot listo: ${client.user.tag}`);
@@ -243,7 +243,7 @@ app.get("/auth/callback", async (req, res) => {
             { expiresIn: "7d" }
         );
 
-        res.redirect(`https://spritleweb.netlify.app/auth/callback?token=${jwtToken}`);
+        res.redirect(`http://localhost:5173/auth/callback?token=${jwtToken}`);
     } catch (err) {
         console.error("OAuth error:", err?.response?.data || err);
         res.status(500).send("Error en OAuth");

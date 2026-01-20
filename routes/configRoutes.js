@@ -9,6 +9,7 @@ import LogsConfig from '../models/LogsConfig.js';
 import DisabledCommands from '../models/DisabledCommands.js';
 import Guild from '../models/Guild.js';
 import SecureRoleConfig from '../models/SecureRoleConfig.js';
+import AntiPanel from '../models/Anti-Panel.js';
 
 // ====================================================================
 // AUTO-SANCTIONS ROUTES
@@ -38,7 +39,6 @@ router.post('/:guildId/auto-sanctions', async (req, res) => {
             { upsert: true, new: true }
         );
         
-        // ✅ EMIT SOCKET.IO
         req.io.emit('update-auto-sanctions', { guildId, config });
         
         res.json({ ok: true, config });
@@ -98,7 +98,6 @@ router.post('/:guildId/logs', async (req, res) => {
             { upsert: true, new: true }
         );
         
-        // ✅ EMIT SOCKET.IO
         req.io.emit('update-logs', { guildId, config });
         
         res.json({ ok: true, config });
@@ -113,7 +112,6 @@ router.delete('/:guildId/logs', async (req, res) => {
         const { guildId } = req.params;
         await LogsConfig.deleteOne({ guildId });
         
-        // ✅ EMIT SOCKET.IO
         req.io.emit('update-logs', { guildId, config: { logChannelId: null, cmdDetectorEnabled: false } });
         
         res.json({ ok: true, message: 'Configuración eliminada' });
@@ -163,7 +161,6 @@ router.post('/:guildId/disabled-commands', async (req, res) => {
             await config.save();
         }
         
-        // ✅ EMIT SOCKET.IO
         req.io.emit('update-disabled-commands', { guildId, commands: config.disabledCommands });
         
         res.json({ ok: true, config });
@@ -184,7 +181,6 @@ router.delete('/:guildId/disabled-commands/:command', async (req, res) => {
         config.disabledBy.delete(command);
         await config.save();
         
-        // ✅ EMIT SOCKET.IO
         req.io.emit('update-disabled-commands', { guildId, commands: config.disabledCommands });
         
         res.json({ ok: true, config });
@@ -225,13 +221,94 @@ router.post('/:guildId/language', async (req, res) => {
             { upsert: true, new: true }
         );
         
-        // ✅ EMIT SOCKET.IO
         req.io.emit('update-language', { guildId, lang: guild.lang });
         
         res.json({ ok: true, lang: guild.lang });
     } catch (err) {
         console.error('Error cambiando idioma:', err);
         res.status(500).json({ error: 'Error cambiando idioma' });
+    }
+});
+
+
+// ====================================================================
+// ANTI-PANEL ROUTES
+// ====================================================================
+
+router.get('/:guildId/anti-panel', async (req, res) => {
+    try {
+        const { guildId } = req.params;
+        let config = await AntiPanel.findOne({ guildId });
+        if (!config) {
+            config = {
+                everyoneMention: false,
+                spoilerAbuse: false,
+                zeroWidth: false,
+                fastMessages: false
+            };
+        }
+        res.json(config);
+    } catch (err) {
+        console.error('Error obteniendo anti-panel config:', err);
+        res.status(500).json({ error: 'Error obteniendo configuración' });
+    }
+});
+
+router.post('/:guildId/anti-panel', async (req, res) => {
+    try {
+        const { guildId } = req.params;
+        const { everyoneMention, spoilerAbuse, zeroWidth, fastMessages } = req.body;
+        
+        const config = await AntiPanel.findOneAndUpdate(
+            { guildId },
+            { 
+                guildId, 
+                everyoneMention: everyoneMention || false,
+                spoilerAbuse: spoilerAbuse || false,
+                zeroWidth: zeroWidth || false,
+                fastMessages: fastMessages || false,
+                updatedAt: Date.now(),
+                updatedBy: req.user?.id
+            },
+            { upsert: true, new: true }
+        );
+        
+        req.io.emit('update-anti-filters', { guildId, filters: config });
+        
+        res.json({ ok: true, config });
+    } catch (err) {
+        console.error('Error guardando anti-panel config:', err);
+        res.status(500).json({ error: 'Error guardando configuración' });
+    }
+});
+
+router.patch('/:guildId/anti-panel/:filterName', async (req, res) => {
+    try {
+        const { guildId, filterName } = req.params;
+        const { enabled } = req.body;
+        
+        const validFilters = ['everyoneMention', 'spoilerAbuse', 'zeroWidth', 'fastMessages'];
+        if (!validFilters.includes(filterName)) {
+            return res.status(400).json({ error: 'Filtro no válido' });
+        }
+        
+        const config = await AntiPanel.findOneAndUpdate(
+            { guildId },
+            { 
+                guildId,
+                [filterName]: enabled,
+                updatedAt: Date.now(),
+                updatedBy: req.user?.id
+            },
+            { upsert: true, new: true }
+        );
+        
+        req.io.emit('update-anti-filters', { guildId, filters: config });
+        
+        res.json({ ok: true, config });
+    } catch (err) {
+        console.error('Error actualizando filtro:', err);
+        res.status(500).json({ error: 'Error actualizando filtro' });
     }
 });
 // ====================================================================
@@ -344,7 +421,6 @@ router.post('/:guildId/secure-role/create', async (req, res) => {
         
         await config.save();
         
-        // ✅ EMIT SOCKET.IO
         req.io.emit('update-secure-role', { guildId, config });
         
         res.json({ ok: true, config });
